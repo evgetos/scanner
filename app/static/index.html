@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Crypto Situation Scanner</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo-dot"></span>
+        <h1>Crypto Situation Scanner</h1>
+      </div>
+      <div class="status">
+        <span id="connection-indicator" class="indicator indicator--idle"></span>
+        <span id="connection-label">Connecting…</span>
+        <span class="separator">·</span>
+        <span>Last update: <span id="last-update">—</span></span>
+        <span class="separator">·</span>
+        <span>Refresh: <span id="poll-interval">1.0</span>s</span>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card situations-card">
+        <header>
+          <h2>Active situations</h2>
+          <span id="situations-count" class="badge">0</span>
+        </header>
+        <div id="situations" class="situations">
+          <p class="empty">No situations detected yet. Waiting for data…</p>
+        </div>
+      </section>
+
+      <section class="card tickers-card">
+        <header>
+          <h2>Top USDT pairs by 24h volume</h2>
+          <span id="tickers-count" class="badge">0</span>
+        </header>
+        <div class="table-wrap">
+          <table class="tickers">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th class="num">Price</th>
+                <th class="num">24h %</th>
+                <th class="num">24h volume (USDT)</th>
+                <th class="num">24h range</th>
+              </tr>
+            </thead>
+            <tbody id="tickers-body">
+              <tr>
+                <td colspan="5" class="empty">Loading…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

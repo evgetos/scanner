@@ -1,0 +1,7 @@
+# Minimal runtime dependencies for IDE users who don't want to install Poetry.
+# Versions are pinned loosely to match what `poetry install` would resolve
+# from pyproject.toml. Generate an exact lockfile-style export with
+# `poetry export -f requirements.txt --without-hashes` if you need it.
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+httpx>=0.27,<1

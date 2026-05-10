@@ -21,11 +21,47 @@ self-contained web dashboard that refreshes the data every second.
 
 ## Running locally
 
-The project uses [Poetry](https://python-poetry.org/) and Python 3.10+.
+The project requires Python 3.10+. You can run it from an IDE without ever
+touching a terminal, or from the command line — pick whichever you prefer.
+
+### Option A — From PyCharm (no command line)
+
+1. `File → Open…` and select the cloned `scanner/` folder.
+2. When PyCharm asks about the interpreter, point it at any Python 3.10+
+   environment (or let PyCharm create a fresh virtualenv for the project).
+3. PyCharm should auto-detect `requirements.txt` and offer to install the
+   dependencies — accept the prompt. If it doesn't, right-click
+   `requirements.txt` → `Install all Packages`.
+4. Open `run.py` and click the green ▶ next to `if __name__ == "__main__":`,
+   or pick the bundled **Scanner** run configuration from the top toolbar
+   (it's stored at `.run/Scanner.run.xml` and ships with the repo).
+
+`run.py` starts uvicorn programmatically and opens
+http://127.0.0.1:8000 in your default browser. Hit the red ■ Stop button to
+shut it down.
+
+Need a different port? Set `SCANNER_PORT` (and optionally `SCANNER_HOST`)
+under `Run → Edit Configurations → Environment variables`. Set
+`SCANNER_OPEN_BROWSER=0` if you don't want a browser tab to be opened
+automatically.
+
+### Option B — From the command line
+
+With [Poetry](https://python-poetry.org/):
 
 ```bash
 poetry install
+poetry run python run.py
+# or, equivalently:
 poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Or with plain pip:
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python run.py
 ```
 
 Then open http://localhost:8000.
@@ -39,6 +75,10 @@ interval, the number of tracked symbols, or detection thresholds.
 ## Layout
 
 ```
+run.py             # IDE entry point (PyCharm / VS Code green Run button)
+requirements.txt   # pip-friendly dependency list (mirrors pyproject.toml)
+.run/
+  Scanner.run.xml  # Shared PyCharm run configuration
 app/
   main.py          # FastAPI app, lifespan-managed scanner
   scanner.py       # Background market poller and situation detector

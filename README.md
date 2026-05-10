@@ -72,6 +72,20 @@ variables* (ключи `MEXC_API_KEY`, `BINANCE_API_KEY`, `SCANNER_PROXY` и т.
 будут показаны как `?`, а проверка общих сетей ограничится биржами с публичными
 эндпоинтами (Bitget, KuCoin, Huobi, Gate.io, XT).
 
+### .env-файл
+
+`run.py` автоматически подхватывает `.env` рядом с собой (через `python-dotenv`)
+— в репозитории лежит шаблон `.env.example`. Скопируйте его:
+
+```bash
+cp .env.example .env
+# и впишите ключи
+```
+
+`.env` уже в `.gitignore`, коммиты безопасны. При прямом вызове `uvicorn app.main:app`
+файл НЕ подгружается — используйте `python run.py` либо выполните
+`set -a && source .env && set +a` перед запуском.
+
 ## Структура
 
 ```

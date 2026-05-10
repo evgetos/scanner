@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Crypto Arbitrage Scanner</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo-dot"></span>
+        <h1>Crypto Arbitrage Scanner</h1>
+      </div>
+      <div class="status">
+        <span id="state-indicator" class="indicator indicator--idle"></span>
+        <span id="state-label">Загрузка…</span>
+        <span class="separator">·</span>
+        <span>Обновлено: <span id="last-update">—</span></span>
+        <span class="separator">·</span>
+        <span>Авто-рефреш: <span id="refresh-interval">—</span> c</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="card controls-card">
+        <header>
+          <h2>Параметры сканирования</h2>
+        </header>
+        <form id="controls" class="controls">
+          <label>
+            <span>Прокси</span>
+            <input type="text" id="input-proxy" placeholder="socks5://user:pass@host:port (опционально)" />
+          </label>
+          <label>
+            <span>Мин. объём 24ч, $</span>
+            <input type="number" id="input-min-volume" min="0" step="1000" placeholder="200000" />
+          </label>
+          <label>
+            <span>Мин. спред, %</span>
+            <input type="number" id="input-min-spread" min="0" step="0.1" placeholder="0.5" />
+          </label>
+          <label>
+            <span>Макс. спред, %</span>
+            <input type="number" id="input-max-spread" min="0" step="0.1" placeholder="20" />
+          </label>
+          <div class="actions">
+            <button type="submit" id="btn-scan">Запустить сканирование</button>
+            <span id="form-hint" class="hint"></span>
+          </div>
+        </form>
+      </section>
+
+      <section class="card summary-card">
+        <header>
+          <h2>Сводка</h2>
+        </header>
+        <div class="summary">
+          <div class="metric">
+            <span class="label">Всего USDT-пар</span>
+            <span class="value" id="metric-total">—</span>
+          </div>
+          <div class="metric">
+            <span class="label">На 2+ биржах</span>
+            <span class="value" id="metric-multi">—</span>
+          </div>
+          <div class="metric">
+            <span class="label">Арбитражных строк</span>
+            <span class="value" id="metric-rows">—</span>
+          </div>
+          <div class="metric">
+            <span class="label">С возможным трансфером</span>
+            <span class="value" id="metric-transfer">—</span>
+          </div>
+          <div class="metric">
+            <span class="label">Длительность скана</span>
+            <span class="value" id="metric-duration">—</span>
+          </div>
+        </div>
+        <div class="exchanges">
+          <h3>Биржи</h3>
+          <div id="exchanges-grid" class="exchanges-grid"></div>
+        </div>
+      </section>
+
+      <section class="card arb-card">
+        <header>
+          <h2>Арбитражные возможности</h2>
+          <span id="arb-count" class="badge">0</span>
+        </header>
+
+        <div class="filters">
+          <label class="checkbox">
+            <input type="checkbox" id="filter-transfer" />
+            Только с возможным трансфером (D+/W+)
+          </label>
+          <label>
+            <span>Поиск пары</span>
+            <input type="text" id="filter-pair" placeholder="BTC, ETH, …" />
+          </label>
+        </div>
+
+        <div class="table-wrap">
+          <table class="arb">
+            <thead>
+              <tr>
+                <th data-sort="pair">Пара</th>
+                <th data-sort="buy_exchange">Купить</th>
+                <th class="num" data-sort="buy_price">Цена покупки (ask)</th>
+                <th data-sort="sell_exchange">Продать</th>
+                <th class="num" data-sort="sell_price">Цена продажи (bid)</th>
+                <th class="num" data-sort="spread">Спред</th>
+                <th>D/W покупка</th>
+                <th>D/W продажа</th>
+                <th class="num" data-sort="buy_volume">Объём 24ч (покупка)</th>
+                <th class="num" data-sort="sell_volume">Объём 24ч (продажа)</th>
+                <th class="num" data-sort="ob_volume">Стакан, $</th>
+                <th class="num" data-sort="ob_profit">Профит, $</th>
+                <th>Сети</th>
+              </tr>
+            </thead>
+            <tbody id="arb-body">
+              <tr>
+                <td colspan="13" class="empty">Ожидание первого скана…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="footer-note">
+          Спред = (bid_sell − ask_buy) / ask_buy × 100%. D+/D− — депозит открыт/закрыт.
+          W+/W− — вывод открыт/закрыт. «?» — нет данных (нужен API-ключ биржи).
+          Объём в стакане и профит рассчитаны по пересечению ask/bid стаканов без учёта комиссий.
+        </p>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

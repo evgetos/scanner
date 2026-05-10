@@ -18,11 +18,24 @@ environment variables if 8000 is already in use.
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 import webbrowser
+from pathlib import Path
 
-import uvicorn
+# Make sure the repo root (the directory containing this file *and* the
+# `app/` package) is on sys.path before we import anything from `app`.
+# Without this, running `run.py` from a different working directory --
+# for example PyCharm's run configurations that pick a non-root cwd --
+# can fail with `ModuleNotFoundError: No module named 'app'`.
+_REPO_ROOT = Path(__file__).resolve().parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+import uvicorn  # noqa: E402  (import after sys.path tweak is intentional)
+
+from app.main import app  # noqa: E402
 
 DEFAULT_HOST = os.environ.get("SCANNER_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("SCANNER_PORT", "8000"))
@@ -52,11 +65,14 @@ def main() -> None:
             args=(url,),
             daemon=True,
         ).start()
+    # Pass the FastAPI instance directly (instead of the "app.main:app"
+    # import string) so uvicorn does not have to re-resolve the module
+    # through its own import machinery -- which would fail again if
+    # PyCharm's working directory does not include the project root.
     uvicorn.run(
-        "app.main:app",
+        app,
         host=DEFAULT_HOST,
         port=DEFAULT_PORT,
-        reload=False,
         log_level="info",
     )
 

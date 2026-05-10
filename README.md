@@ -25,13 +25,32 @@ Blofin, Hyperliquid, XT, Asterdex.
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
-pip install -e .
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
+pip install -r requirements.txt      # либо: pip install -e .
 
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+python run.py                        # либо: uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 Откройте <http://localhost:8000>.
+
+## Запуск из PyCharm
+
+1. **Открыть проект**: *File → Open* → выбрать корневую папку проекта.
+2. **Настроить интерпретатор**: *Settings → Project: scanner → Python Interpreter →
+   ⚙ → Add → Virtualenv Environment → New environment* (Python ≥ 3.10), нажать OK.
+3. **Установить зависимости**: открыть встроенный терминал PyCharm (`Alt+F12`) и выполнить
+   `pip install -r requirements.txt`.
+4. **Запустить**: в верхней панели выбрать конфигурацию **Web Scanner** (она уже
+   в репозитории, лежит в `.idea/runConfigurations/Web_Scanner.xml`) и нажать ▶.
+   Альтернатива — открыть `run.py` и нажать *Run 'run'* (Ctrl+Shift+F10) или
+   правым кликом → *Run 'run'*.
+
+Логи uvicorn появятся в окне *Run*. Открыть <http://127.0.0.1:8000>.
+Горячая перезагрузка включена, изменения в `app/` подхватываются автоматически.
+
+Если нужны API-ключи или прокси — добавьте их в *Run Configuration → Environment
+variables* (ключи `MEXC_API_KEY`, `BINANCE_API_KEY`, `SCANNER_PROXY` и т.д.,
+полный список ниже).
 
 ## Переменные окружения
 

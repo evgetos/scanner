@@ -12,5 +12,6 @@ env/
 dist/
 build/
 .DS_Store
-.idea/
+.idea/*
+!.idea/runConfigurations/
 .vscode/

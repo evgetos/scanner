@@ -97,11 +97,14 @@
     statsLimit: document.getElementById("stats-limit"),
     statsRefresh: document.getElementById("btn-stats-refresh"),
     statsClear: document.getElementById("btn-stats-clear"),
+    statsDownload: document.getElementById("btn-stats-download"),
     statsHint: document.getElementById("stats-hint"),
     statsHistorySize: document.getElementById("stats-history-size"),
     statsCount: document.getElementById("stats-count"),
     statsBody: document.getElementById("stats-body"),
     statsBufferInfo: document.getElementById("stats-buffer-info"),
+    statsHistoryFile: document.getElementById("stats-history-file"),
+    statsHistoryFileSize: document.getElementById("stats-history-file-size"),
   };
 
   const state = {
@@ -122,6 +125,14 @@
     if (Math.abs(value) < 1) return value.toFixed(6);
     if (Math.abs(value) < 100) return value.toFixed(4);
     return value.toFixed(2);
+  }
+
+  function fmtBytes(n) {
+    if (!n || n < 0) return "0 B";
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(2) + " MB";
+    return (n / (1024 * 1024 * 1024)).toFixed(2) + " GB";
   }
 
   function fmtUsd(value) {
@@ -368,6 +379,27 @@
       const limit = payload.history_limit || 1000;
       elements.statsHistorySize.textContent = payload.history_size + " / " + limit;
       elements.statsBufferInfo.textContent = String(limit);
+    }
+
+    // On-disk history file info + download button gating.
+    const fileSize = payload.history_file_size || 0;
+    const filePath = payload.history_file;
+    if (elements.statsHistoryFile) {
+      elements.statsHistoryFile.textContent = filePath || "персистентность отключена";
+    }
+    if (elements.statsHistoryFileSize) {
+      elements.statsHistoryFileSize.textContent = fmtBytes(fileSize);
+    }
+    if (elements.statsDownload) {
+      const downloadDisabled = !filePath || fileSize === 0;
+      elements.statsDownload.classList.toggle("disabled", downloadDisabled);
+      if (downloadDisabled) {
+        elements.statsDownload.setAttribute("aria-disabled", "true");
+        elements.statsDownload.removeAttribute("href");
+      } else {
+        elements.statsDownload.removeAttribute("aria-disabled");
+        elements.statsDownload.setAttribute("href", "/api/history/download");
+      }
     }
 
     const result = payload.result;

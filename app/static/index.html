@@ -188,6 +188,7 @@
             </label>
             <div class="stats-actions">
               <button type="button" id="btn-stats-refresh" class="btn-secondary">↻ Обновить</button>
+              <a id="btn-stats-download" class="btn-secondary" href="/api/history/download" download="scanner_history.jsonl" title="Скачать полный JSONL-файл истории">⬇ Скачать историю</a>
               <button type="button" id="btn-stats-clear" class="btn-danger">Очистить историю</button>
               <span class="hint" id="stats-hint"></span>
             </div>
@@ -223,8 +224,10 @@
             </table>
           </div>
           <p class="footer-note">
-            История пишется в кольцевой буфер на сервере (последние <span id="stats-buffer-info">1000</span> событий).
-            Каждое событие = одна арбитражная строка из завершённого скана. Фильтры применяются на сервере.
+            История пишется в кольцевой буфер на сервере (последние <span id="stats-buffer-info">1000</span> событий)
+            и параллельно на диск в JSON Lines — <span id="stats-history-file">—</span>
+            (<span id="stats-history-file-size">0 B</span>). Кнопка «Скачать историю» отдаёт файл целиком,
+            фильтры в этой таблице применяются к буферу в памяти.
           </p>
         </section>
       </section>

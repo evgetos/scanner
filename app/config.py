@@ -8,7 +8,17 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
+
+
+def _default_history_file() -> Path:
+    """Default location for the JSONL history file.
+
+    Lives in ``<repo_root>/data/scanner_history.jsonl`` — the ``data`` folder
+    is created lazily by the writer and is git-ignored.
+    """
+    return Path(__file__).resolve().parent.parent / "data" / "scanner_history.jsonl"
 
 
 def _env(name: str, default: str = "") -> str:
@@ -70,4 +80,12 @@ class AppConfig:
     )
     history_limit: int = field(
         default_factory=lambda: _env_int("SCANNER_HISTORY_LIMIT", 1000)
+    )
+    # JSON Lines file used to persist the full history of arbitrage events.
+    # An empty value disables persistence (the in-memory ring buffer is the
+    # only source of truth in that case).
+    history_file: str = field(
+        default_factory=lambda: _env(
+            "SCANNER_HISTORY_FILE", str(_default_history_file())
+        )
     )

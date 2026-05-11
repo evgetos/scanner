@@ -107,7 +107,11 @@ html, body {
 
 .btn-pause,
 .btn-secondary,
-.btn-danger {
+.btn-danger,
+a.btn-secondary,
+a.btn-danger {
+  display: inline-block;
+  text-decoration: none;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 7px 14px;
@@ -143,9 +147,12 @@ html, body {
   border-color: var(--accent);
 }
 
-.btn-secondary:disabled {
+.btn-secondary:disabled,
+a.btn-secondary.disabled,
+a.btn-secondary[aria-disabled="true"] {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .btn-danger {

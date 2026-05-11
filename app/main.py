@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import AppConfig, ScannerConfig
+from .history_store import HistoryStore
 from .scanner_core import run_scan, scan_result_to_dict, EXCHANGES_ORDER
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,19 @@ class ScannerState:
         self._task: Optional[asyncio.Task[Any]] = None
         self._overrides: Dict[str, Any] = {}
         self.history: Deque[Dict[str, Any]] = deque(maxlen=APP_CONFIG.history_limit)
+        self.history_store = HistoryStore(APP_CONFIG.history_file or None)
+        # Restore the most recent events from disk so the Stats tab is
+        # populated immediately after a restart.
+        if self.history_store.enabled:
+            restored = self.history_store.load_tail(APP_CONFIG.history_limit)
+            for ev in restored:
+                self.history.append(ev)
+            if restored:
+                logger.info(
+                    "history: restored %d events from %s",
+                    len(restored),
+                    self.history_store.path,
+                )
         # Runtime-mutable refresh interval (seconds). Initialized from the
         # env-driven default but can be changed at runtime via /api/scan.
         self.refresh_interval: float = float(APP_CONFIG.refresh_interval)
@@ -85,8 +99,13 @@ class ScannerState:
 
     def _record_history(self, result_dict: Dict[str, Any]) -> None:
         ts = result_dict.get("finished_at") or time.time()
+        new_events: List[Dict[str, Any]] = []
         for row in result_dict.get("arbitrage", []) or []:
-            self.history.append(_row_to_history_event(row, ts))
+            event = _row_to_history_event(row, ts)
+            self.history.append(event)
+            new_events.append(event)
+        if new_events and self.history_store.enabled:
+            self.history_store.append_many(new_events)
 
     async def trigger(self) -> None:
         """Start a scan unless one is already running.
@@ -235,6 +254,8 @@ async def get_state() -> JSONResponse:
         "exchanges_order": EXCHANGES_ORDER,
         "history_size": len(state.history),
         "history_limit": APP_CONFIG.history_limit,
+        "history_file": str(state.history_store.path) if state.history_store.enabled else None,
+        "history_file_size": state.history_store.size_bytes(),
         "result": state.last_result,
     }
     return JSONResponse(payload)
@@ -319,8 +340,26 @@ async def get_stats(
 @app.delete("/api/stats")
 async def clear_stats() -> Dict[str, Any]:
     state.history.clear()
+    if state.history_store.enabled:
+        state.history_store.clear()
     logger.info("History cleared by user")
     return {"cleared": True}
+
+
+@app.get("/api/history/download")
+async def download_history() -> FileResponse:
+    """Stream the full JSONL history file to the client.
+
+    If persistence is disabled or the file is empty, returns 404.
+    """
+    store = state.history_store
+    if not store.enabled or store.path is None or not store.path.exists() or store.size_bytes() == 0:
+        raise HTTPException(status_code=404, detail="History file is empty or persistence is disabled.")
+    return FileResponse(
+        path=store.path,
+        media_type="application/x-ndjson",
+        filename="scanner_history.jsonl",
+    )
 
 
 @app.get("/")

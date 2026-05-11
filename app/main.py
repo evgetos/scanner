@@ -63,6 +63,16 @@ class ScannerState:
         self._overrides: Dict[str, Any] = {}
         self.history: Deque[Dict[str, Any]] = deque(maxlen=APP_CONFIG.history_limit)
         self.history_store = HistoryStore(APP_CONFIG.history_file or None)
+        # The user-controlled stats filter is the gatekeeper for the
+        # persistent history: only events that pass these thresholds get
+        # written to disk / kept in the ring buffer. Defaults mirror the
+        # "Stats" tab defaults so behaviour is sensible out of the box.
+        self.stats_filter: Dict[str, Any] = {
+            "min_spread": 2.0,
+            "min_profit": 20.0,
+            "require_transfer": False,
+            "pair": "",
+        }
         # Restore the most recent events from disk so the Stats tab is
         # populated immediately after a restart.
         if self.history_store.enabled:
@@ -78,6 +88,47 @@ class ScannerState:
         # Runtime-mutable refresh interval (seconds). Initialized from the
         # env-driven default but can be changed at runtime via /api/scan.
         self.refresh_interval: float = float(APP_CONFIG.refresh_interval)
+
+    def set_stats_filter(self, filt: Dict[str, Any]) -> None:
+        """Update the persistence filter. Unknown / None values are ignored."""
+        if not isinstance(filt, dict):
+            return
+        if filt.get("min_spread") is not None:
+            try:
+                self.stats_filter["min_spread"] = max(0.0, float(filt["min_spread"]))
+            except (TypeError, ValueError):
+                pass
+        if filt.get("min_profit") is not None:
+            try:
+                self.stats_filter["min_profit"] = max(0.0, float(filt["min_profit"]))
+            except (TypeError, ValueError):
+                pass
+        if filt.get("require_transfer") is not None:
+            self.stats_filter["require_transfer"] = bool(filt["require_transfer"])
+        if filt.get("pair") is not None:
+            self.stats_filter["pair"] = str(filt["pair"]).strip()
+
+    def event_passes_stats_filter(self, event: Dict[str, Any]) -> bool:
+        """Return True if ``event`` satisfies the active stats filter."""
+        f = self.stats_filter
+        spread = event.get("spread") or 0.0
+        # ``ob_profit_usdt`` is ``None`` when orderbook analysis didn't run
+        # (low-volume rows, etc.). Treat that as 0 so positive min_profit
+        # thresholds correctly exclude such rows.
+        profit = event.get("ob_profit_usdt") or 0.0
+        if spread < f["min_spread"]:
+            return False
+        if profit < f["min_profit"]:
+            return False
+        if f["require_transfer"] and not event.get("has_transfer"):
+            return False
+        pq = f["pair"].upper()
+        if pq:
+            pair = (event.get("pair") or "").upper()
+            coin = (event.get("coin") or "").upper()
+            if pq not in pair and pq not in coin:
+                return False
+        return True
 
     def set_overrides(self, overrides: Dict[str, Any]) -> None:
         # ``refresh_interval`` is a state-level setting, not a per-scan config,
@@ -100,12 +151,24 @@ class ScannerState:
     def _record_history(self, result_dict: Dict[str, Any]) -> None:
         ts = result_dict.get("finished_at") or time.time()
         new_events: List[Dict[str, Any]] = []
+        skipped = 0
         for row in result_dict.get("arbitrage", []) or []:
             event = _row_to_history_event(row, ts)
+            if not self.event_passes_stats_filter(event):
+                skipped += 1
+                continue
             self.history.append(event)
             new_events.append(event)
         if new_events and self.history_store.enabled:
             self.history_store.append_many(new_events)
+        if skipped:
+            logger.info(
+                "history: kept %d / %d arbitrage rows (skipped %d below stats filter %s)",
+                len(new_events),
+                len(new_events) + skipped,
+                skipped,
+                self.stats_filter,
+            )
 
     async def trigger(self) -> None:
         """Start a scan unless one is already running.
@@ -236,6 +299,19 @@ class ScanOverrides(BaseModel):
     )
 
 
+class StatsFilterPayload(BaseModel):
+    """Filter applied at scan time to decide which arbitrage rows are kept.
+
+    These thresholds gate both the in-memory ring buffer AND the on-disk
+    JSONL file — rows that don't pass are silently dropped from history.
+    """
+
+    min_spread: Optional[float] = Field(default=None, ge=0)
+    min_profit: Optional[float] = Field(default=None, ge=0)
+    require_transfer: Optional[bool] = None
+    pair: Optional[str] = None
+
+
 @app.get("/healthz")
 async def healthz() -> Dict[str, str]:
     return {"status": "ok"}
@@ -256,6 +332,7 @@ async def get_state() -> JSONResponse:
         "history_limit": APP_CONFIG.history_limit,
         "history_file": str(state.history_store.path) if state.history_store.enabled else None,
         "history_file_size": state.history_store.size_bytes(),
+        "stats_filter": state.stats_filter,
         "result": state.last_result,
     }
     return JSONResponse(payload)
@@ -335,6 +412,18 @@ async def get_stats(
             },
         }
     )
+
+
+@app.post("/api/stats/filter")
+async def update_stats_filter(payload: Optional[StatsFilterPayload] = None) -> Dict[str, Any]:
+    """Update the persistence filter (thresholds for what gets saved).
+
+    Applied immediately to the next scan's recorded events. Does NOT
+    retroactively delete anything already on disk.
+    """
+    body = payload.model_dump() if payload else {}
+    state.set_stats_filter(body)
+    return {"status": "ok", "stats_filter": state.stats_filter}
 
 
 @app.delete("/api/stats")

@@ -489,6 +489,30 @@
     });
   }
 
+  // Push the current stats-tab thresholds to the server so that the next
+  // scan will only record events that pass these filters (both to the
+  // in-memory buffer and to the on-disk JSONL file).
+  async function pushStatsFilter() {
+    const body = {
+      min_spread: parseFloat(elements.statsMinSpread.value) || 0,
+      min_profit: parseFloat(elements.statsMinProfit.value) || 0,
+      require_transfer: !!elements.statsTransfer.checked,
+      pair: (elements.statsPair.value || "").trim(),
+    };
+    try {
+      const response = await fetch("/api/stats/filter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) return;
+      elements.statsHint.textContent =
+        "Фильтр записи применён • " + new Date().toLocaleTimeString();
+    } catch (error) {
+      console.error("pushStatsFilter failed", error);
+    }
+  }
+
   async function fetchStats() {
     const minSpread = parseFloat(elements.statsMinSpread.value) || 0;
     const minProfit = parseFloat(elements.statsMinProfit.value) || 0;
@@ -773,13 +797,26 @@
 
     // Stats controls
     restoreStatsForm();
-    elements.statsMinSpread.addEventListener("change", fetchStats);
-    elements.statsMinProfit.addEventListener("change", fetchStats);
+    const debouncedPushFilter = debounce(pushStatsFilter, 500);
+    // The four "threshold" inputs also gate writes; the row-limit is purely
+    // a display cap so we don't push it.
+    const statsFilterAndFetch = () => {
+      pushStatsFilter();
+      fetchStats();
+    };
+    elements.statsMinSpread.addEventListener("change", statsFilterAndFetch);
+    elements.statsMinProfit.addEventListener("change", statsFilterAndFetch);
     elements.statsLimit.addEventListener("change", fetchStats);
-    elements.statsPair.addEventListener("input", debounce(fetchStats, 400));
-    elements.statsTransfer.addEventListener("change", fetchStats);
+    elements.statsPair.addEventListener("input", debounce(() => {
+      debouncedPushFilter();
+      fetchStats();
+    }, 400));
+    elements.statsTransfer.addEventListener("change", statsFilterAndFetch);
     elements.statsRefresh.addEventListener("click", fetchStats);
     elements.statsClear.addEventListener("click", clearStats);
+    // Initial sync: ensure the server sees the (possibly localStorage-restored)
+    // filter values on page load so the very first scan respects them.
+    pushStatsFilter();
 
     // Restore tab.
     const savedTab = getLs("ui.tab", "arbitrage");

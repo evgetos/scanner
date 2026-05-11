@@ -346,12 +346,19 @@
       elements.stateLabel.textContent = "Готово";
       elements.btnApplyParams.disabled = false;
       elements.btnScanNow.disabled = false;
-      elements.formHint.textContent = "";
+      // Leave whatever the form hint currently says — typically an auto-apply
+      // confirmation timestamp — unless we have nothing useful to show.
+      if (!elements.formHint.textContent || elements.formHint.textContent === "Запуск…" || elements.formHint.textContent === "Скан запущен.") {
+        elements.formHint.textContent = "Параметры применяются автоматически.";
+      }
     } else {
       elements.stateIndicator.className = "indicator indicator--idle";
       elements.stateLabel.textContent = "Ожидание первого скана…";
       elements.btnApplyParams.disabled = false;
       elements.btnScanNow.disabled = false;
+      if (!elements.formHint.textContent) {
+        elements.formHint.textContent = "Параметры применяются автоматически.";
+      }
     }
 
     elements.lastUpdate.textContent = fmtTime(payload.last_finished_at);
@@ -566,6 +573,31 @@
     }
   }
 
+  // Push current form values to the server without triggering a scan. The
+  // next background-loop tick (or the user clicking "Сканировать сейчас")
+  // will pick up the new params automatically.
+  async function autoApplyOverrides() {
+    const body = readScanOverrides();
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        elements.formHint.textContent = "Не удалось применить: " + text.slice(0, 120);
+        return;
+      }
+      // Brief confirmation that auto-save worked. Cleared on the next render
+      // or by the user's own actions.
+      elements.formHint.textContent = "Параметры применены • " + new Date().toLocaleTimeString();
+    } catch (error) {
+      elements.formHint.textContent = "Ошибка авто-применения: " + error.message;
+      console.error(error);
+    }
+  }
+
   async function togglePause() {
     const endpoint = state.paused ? "/api/resume" : "/api/pause";
     elements.btnPause.disabled = true;
@@ -676,6 +708,25 @@
     elements.filterPair.addEventListener("input", renderRows);
     elements.btnPause.addEventListener("click", togglePause);
     elements.btnScanNow.addEventListener("click", () => triggerScan(null));
+
+    // Auto-apply param edits to the backend (debounced) so the user does not
+    // have to click "Сканировать сейчас" just to update min/max thresholds
+    // or the refresh interval.
+    const debouncedAutoApply = debounce(autoApplyOverrides, 600);
+    [
+      elements.inputProxy,
+      elements.inputMinVolume,
+      elements.inputMinSpread,
+      elements.inputMaxSpread,
+      elements.inputRefreshInterval,
+    ].forEach((el) => {
+      if (!el) return;
+      el.addEventListener("input", debouncedAutoApply);
+      // 'change' fires when the field loses focus or is committed via Enter —
+      // flush immediately so the user sees the confirmation without waiting
+      // for the debounce timer.
+      el.addEventListener("change", autoApplyOverrides);
+    });
 
     // Tabs
     elements.tabs.forEach((t) => {

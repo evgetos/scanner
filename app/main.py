@@ -253,6 +253,24 @@ async def trigger_scan(overrides: Optional[ScanOverrides] = None) -> Dict[str, A
     return {"status": "started"}
 
 
+@app.post("/api/settings")
+async def update_settings(overrides: Optional[ScanOverrides] = None) -> Dict[str, Any]:
+    """Update scanner overrides without triggering a scan.
+
+    Used by the UI to auto-apply parameter edits — the next background-loop
+    tick (or an explicit scan request) picks up the new values.
+    """
+    payload = overrides.model_dump() if overrides else {}
+    if payload.get("proxy") == "":
+        payload["proxy"] = None
+    state.set_overrides(payload)
+    return {
+        "status": "ok",
+        "overrides": state._overrides,
+        "refresh_interval": state.refresh_interval,
+    }
+
+
 @app.post("/api/pause")
 async def pause_scanner() -> Dict[str, Any]:
     state.paused = True

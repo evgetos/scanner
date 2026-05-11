@@ -41,9 +41,10 @@ class ScannerConfig:
     """Tunable parameters for a single scan run."""
 
     proxy: Optional[str] = field(default_factory=lambda: _env("SCANNER_PROXY") or None)
-    min_volume: float = field(default_factory=lambda: _env_float("SCANNER_MIN_VOLUME", 200_000))
-    min_spread: float = field(default_factory=lambda: _env_float("SCANNER_MIN_SPREAD", 0.5))
-    max_spread: float = field(default_factory=lambda: _env_float("SCANNER_MAX_SPREAD", 20.0))
+    min_volume: float = field(default_factory=lambda: _env_float("SCANNER_MIN_VOLUME", 0.0))
+    min_spread: float = field(default_factory=lambda: _env_float("SCANNER_MIN_SPREAD", 0.0))
+    # 0 (or any non-positive value) means "no upper limit".
+    max_spread: float = field(default_factory=lambda: _env_float("SCANNER_MAX_SPREAD", 0.0))
     orderbook_limit: int = field(default_factory=lambda: _env_int("SCANNER_OB_LIMIT", 50))
 
     mexc_api_key: str = field(default_factory=lambda: _env("MEXC_API_KEY"))

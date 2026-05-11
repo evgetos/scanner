@@ -61,8 +61,19 @@ class ScannerState:
         self._task: Optional[asyncio.Task[Any]] = None
         self._overrides: Dict[str, Any] = {}
         self.history: Deque[Dict[str, Any]] = deque(maxlen=APP_CONFIG.history_limit)
+        # Runtime-mutable refresh interval (seconds). Initialized from the
+        # env-driven default but can be changed at runtime via /api/scan.
+        self.refresh_interval: float = float(APP_CONFIG.refresh_interval)
 
     def set_overrides(self, overrides: Dict[str, Any]) -> None:
+        # ``refresh_interval`` is a state-level setting, not a per-scan config,
+        # so consume it here instead of forwarding to ScannerConfig.
+        ri = overrides.pop("refresh_interval", None) if isinstance(overrides, dict) else None
+        if ri is not None:
+            try:
+                self.refresh_interval = max(5.0, float(ri))
+            except (TypeError, ValueError):
+                pass
         self._overrides = {k: v for k, v in overrides.items() if v is not None}
 
     def build_config(self) -> ScannerConfig:
@@ -131,7 +142,7 @@ class ScannerState:
                 raise
             except Exception:  # noqa: BLE001
                 logger.exception("Background scan iteration failed")
-            await asyncio.sleep(max(5.0, APP_CONFIG.refresh_interval))
+            await asyncio.sleep(max(5.0, self.refresh_interval))
 
     def start_background(self) -> None:
         if self._task is None or self._task.done():
@@ -199,7 +210,11 @@ class ScanOverrides(BaseModel):
     )
     min_volume: Optional[float] = Field(default=None, ge=0)
     min_spread: Optional[float] = Field(default=None, ge=0)
+    # max_spread = 0 means "no upper limit".
     max_spread: Optional[float] = Field(default=None, ge=0)
+    refresh_interval: Optional[float] = Field(
+        default=None, ge=5, description="Background loop period in seconds (min 5)."
+    )
 
 
 @app.get("/healthz")
@@ -216,7 +231,7 @@ async def get_state() -> JSONResponse:
         "last_finished_at": state.last_finished_at,
         "last_error": state.last_error,
         "config": state.last_config,
-        "refresh_interval": APP_CONFIG.refresh_interval,
+        "refresh_interval": state.refresh_interval,
         "exchanges_order": EXCHANGES_ORDER,
         "history_size": len(state.history),
         "history_limit": APP_CONFIG.history_limit,

@@ -47,15 +47,19 @@
               </label>
               <label>
                 <span>Мин. объём 24ч, $</span>
-                <input type="number" id="input-min-volume" min="0" step="1000" placeholder="200000" />
+                <input type="number" id="input-min-volume" min="0" step="1000" value="0" placeholder="0" />
               </label>
               <label>
                 <span>Мин. спред, %</span>
-                <input type="number" id="input-min-spread" min="0" step="0.1" placeholder="0.5" />
+                <input type="number" id="input-min-spread" min="0" step="0.1" value="0" placeholder="0" />
               </label>
               <label>
-                <span>Макс. спред, %</span>
-                <input type="number" id="input-max-spread" min="0" step="0.1" placeholder="20" />
+                <span>Макс. спред, % <em title="0 = без верхней границы">(0 = без лимита)</em></span>
+                <input type="number" id="input-max-spread" min="0" step="0.1" value="0" placeholder="0" />
+              </label>
+              <label>
+                <span>Авто-рефреш, c <em title="Период фонового цикла, минимум 5 c">(мин. 5)</em></span>
+                <input type="number" id="input-refresh-interval" min="5" step="5" placeholder="60" />
               </label>
               <div class="actions">
                 <button type="submit" id="btn-apply-params">Применить и сканировать</button>

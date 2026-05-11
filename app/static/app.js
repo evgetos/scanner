@@ -71,6 +71,7 @@
     inputMinVolume: document.getElementById("input-min-volume"),
     inputMinSpread: document.getElementById("input-min-spread"),
     inputMaxSpread: document.getElementById("input-max-spread"),
+    inputRefreshInterval: document.getElementById("input-refresh-interval"),
     metricTotal: document.getElementById("metric-total"),
     metricMulti: document.getElementById("metric-multi"),
     metricRows: document.getElementById("metric-rows"),
@@ -309,6 +310,16 @@
       ? payload.refresh_interval.toFixed(0)
       : "—";
 
+    // Seed the refresh-interval input from the server only if the user hasn't
+    // typed anything into it yet, so we don't clobber pending edits.
+    if (
+      elements.inputRefreshInterval &&
+      elements.inputRefreshInterval.value === "" &&
+      payload.refresh_interval
+    ) {
+      elements.inputRefreshInterval.placeholder = String(payload.refresh_interval | 0);
+    }
+
     state.paused = !!payload.paused;
     updatePauseButton();
 
@@ -520,6 +531,10 @@
     if (elements.inputMinVolume.value !== "") body.min_volume = Number(elements.inputMinVolume.value);
     if (elements.inputMinSpread.value !== "") body.min_spread = Number(elements.inputMinSpread.value);
     if (elements.inputMaxSpread.value !== "") body.max_spread = Number(elements.inputMaxSpread.value);
+    if (elements.inputRefreshInterval && elements.inputRefreshInterval.value !== "") {
+      const ri = Number(elements.inputRefreshInterval.value);
+      if (Number.isFinite(ri) && ri >= 5) body.refresh_interval = ri;
+    }
     return body;
   }
 

@@ -833,7 +833,10 @@ def find_arbitrage(
             continue
 
         spread = ((sell_bid - buy_ask) / buy_ask) * 100.0
-        if not (min_spread <= spread <= max_spread):
+        if spread < min_spread:
+            continue
+        # max_spread <= 0 disables the upper bound entirely.
+        if max_spread > 0 and spread > max_spread:
             continue
 
         opportunities.append({

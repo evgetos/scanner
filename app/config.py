@@ -67,3 +67,6 @@ class AppConfig:
     arbitrage_limit: int = field(
         default_factory=lambda: _env_int("SCANNER_ARBITRAGE_LIMIT", 50)
     )
+    history_limit: int = field(
+        default_factory=lambda: _env_int("SCANNER_HISTORY_LIMIT", 1000)
+    )

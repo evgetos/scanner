@@ -12,6 +12,14 @@
         <span class="logo-dot"></span>
         <h1>Crypto Arbitrage Scanner</h1>
       </div>
+      <nav class="tabs" role="tablist">
+        <button class="tab tab--active" data-tab="arbitrage" role="tab">Арбитраж</button>
+        <button class="tab" data-tab="stats" role="tab">Статистика</button>
+      </nav>
+      <div class="topbar-controls">
+        <button id="btn-pause" class="btn-pause" type="button" title="Поставить фоновый цикл на паузу">⏸ Пауза</button>
+        <button id="btn-scan-now" class="btn-secondary" type="button" title="Запустить скан сейчас с текущими параметрами">↻ Сейчас</button>
+      </div>
       <div class="status">
         <span id="state-indicator" class="indicator indicator--idle"></span>
         <span id="state-label">Загрузка…</span>
@@ -23,115 +31,198 @@
     </header>
 
     <main>
-      <section class="card controls-card">
-        <header>
-          <h2>Параметры сканирования</h2>
-        </header>
-        <form id="controls" class="controls">
-          <label>
-            <span>Прокси</span>
-            <input type="text" id="input-proxy" placeholder="socks5://user:pass@host:port (опционально)" />
-          </label>
-          <label>
-            <span>Мин. объём 24ч, $</span>
-            <input type="number" id="input-min-volume" min="0" step="1000" placeholder="200000" />
-          </label>
-          <label>
-            <span>Мин. спред, %</span>
-            <input type="number" id="input-min-spread" min="0" step="0.1" placeholder="0.5" />
-          </label>
-          <label>
-            <span>Макс. спред, %</span>
-            <input type="number" id="input-max-spread" min="0" step="0.1" placeholder="20" />
-          </label>
-          <div class="actions">
-            <button type="submit" id="btn-scan">Запустить сканирование</button>
-            <span id="form-hint" class="hint"></span>
+      <section id="view-arbitrage" class="view view--active">
+        <section class="card controls-card collapsible" data-collapse-key="controls">
+          <header>
+            <button type="button" class="collapse-toggle" aria-expanded="true">
+              <span class="collapse-arrow">▾</span>
+              <h2>Параметры сканирования</h2>
+            </button>
+          </header>
+          <div class="collapsible-body">
+            <form id="controls" class="controls">
+              <label>
+                <span>Прокси</span>
+                <input type="text" id="input-proxy" placeholder="socks5://user:pass@host:port (опционально)" />
+              </label>
+              <label>
+                <span>Мин. объём 24ч, $</span>
+                <input type="number" id="input-min-volume" min="0" step="1000" placeholder="200000" />
+              </label>
+              <label>
+                <span>Мин. спред, %</span>
+                <input type="number" id="input-min-spread" min="0" step="0.1" placeholder="0.5" />
+              </label>
+              <label>
+                <span>Макс. спред, %</span>
+                <input type="number" id="input-max-spread" min="0" step="0.1" placeholder="20" />
+              </label>
+              <div class="actions">
+                <button type="submit" id="btn-apply-params">Применить и сканировать</button>
+                <span id="form-hint" class="hint"></span>
+              </div>
+            </form>
           </div>
-        </form>
+        </section>
+
+        <section class="card summary-card collapsible" data-collapse-key="summary">
+          <header>
+            <button type="button" class="collapse-toggle" aria-expanded="true">
+              <span class="collapse-arrow">▾</span>
+              <h2>Сводка</h2>
+            </button>
+          </header>
+          <div class="collapsible-body">
+            <div class="summary">
+              <div class="metric">
+                <span class="label">Всего USDT-пар</span>
+                <span class="value" id="metric-total">—</span>
+              </div>
+              <div class="metric">
+                <span class="label">На 2+ биржах</span>
+                <span class="value" id="metric-multi">—</span>
+              </div>
+              <div class="metric">
+                <span class="label">Арбитражных строк</span>
+                <span class="value" id="metric-rows">—</span>
+              </div>
+              <div class="metric">
+                <span class="label">С возможным трансфером</span>
+                <span class="value" id="metric-transfer">—</span>
+              </div>
+              <div class="metric">
+                <span class="label">Длительность скана</span>
+                <span class="value" id="metric-duration">—</span>
+              </div>
+            </div>
+            <div class="exchanges">
+              <h3>Биржи</h3>
+              <div id="exchanges-grid" class="exchanges-grid"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card arb-card">
+          <header>
+            <h2>Арбитражные возможности</h2>
+            <span id="arb-count" class="badge">0</span>
+          </header>
+
+          <div class="filters">
+            <label class="checkbox">
+              <input type="checkbox" id="filter-transfer" />
+              Только с возможным трансфером (D+/W+)
+            </label>
+            <label>
+              <span>Поиск пары</span>
+              <input type="text" id="filter-pair" placeholder="BTC, ETH, …" />
+            </label>
+          </div>
+
+          <div class="table-wrap">
+            <table class="arb">
+              <thead>
+                <tr>
+                  <th data-sort="pair">Пара</th>
+                  <th data-sort="buy_exchange">Купить</th>
+                  <th class="num" data-sort="buy_price">Цена покупки (ask)</th>
+                  <th data-sort="sell_exchange">Продать</th>
+                  <th class="num" data-sort="sell_price">Цена продажи (bid)</th>
+                  <th class="num" data-sort="spread">Спред</th>
+                  <th>D/W покупка</th>
+                  <th>D/W продажа</th>
+                  <th class="num" data-sort="buy_volume">Объём 24ч (покупка)</th>
+                  <th class="num" data-sort="sell_volume">Объём 24ч (продажа)</th>
+                  <th class="num" data-sort="ob_volume">Стакан, $</th>
+                  <th class="num" data-sort="ob_profit">Профит, $</th>
+                  <th>Сети</th>
+                </tr>
+              </thead>
+              <tbody id="arb-body">
+                <tr>
+                  <td colspan="13" class="empty">Ожидание первого скана…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p class="footer-note">
+            Спред = (bid_sell − ask_buy) / ask_buy × 100%. D+/D− — депозит открыт/закрыт.
+            W+/W− — вывод открыт/закрыт. «?» — нет данных (нужен API-ключ биржи).
+            Объём в стакане и профит рассчитаны по пересечению ask/bid стаканов без учёта комиссий.
+            Клик по названию биржи открывает торговую страницу пары в новой вкладке.
+          </p>
+        </section>
       </section>
 
-      <section class="card summary-card">
-        <header>
-          <h2>Сводка</h2>
-        </header>
-        <div class="summary">
-          <div class="metric">
-            <span class="label">Всего USDT-пар</span>
-            <span class="value" id="metric-total">—</span>
+      <section id="view-stats" class="view">
+        <section class="card stats-controls">
+          <header>
+            <h2>Фильтры статистики</h2>
+            <span class="badge" id="stats-history-size">0 / 0</span>
+          </header>
+          <div class="stats-form">
+            <label>
+              <span>Мин. спред, %</span>
+              <input type="number" id="stats-min-spread" min="0" step="0.1" value="2" />
+            </label>
+            <label>
+              <span>Мин. профит, $</span>
+              <input type="number" id="stats-min-profit" min="0" step="1" value="20" />
+            </label>
+            <label>
+              <span>Поиск пары</span>
+              <input type="text" id="stats-pair" placeholder="BTC, ETH, …" />
+            </label>
+            <label class="checkbox">
+              <input type="checkbox" id="stats-transfer" />
+              Только D+/W+
+            </label>
+            <label>
+              <span>Макс. строк</span>
+              <input type="number" id="stats-limit" min="10" step="10" value="200" />
+            </label>
+            <div class="stats-actions">
+              <button type="button" id="btn-stats-refresh" class="btn-secondary">↻ Обновить</button>
+              <button type="button" id="btn-stats-clear" class="btn-danger">Очистить историю</button>
+              <span class="hint" id="stats-hint"></span>
+            </div>
           </div>
-          <div class="metric">
-            <span class="label">На 2+ биржах</span>
-            <span class="value" id="metric-multi">—</span>
-          </div>
-          <div class="metric">
-            <span class="label">Арбитражных строк</span>
-            <span class="value" id="metric-rows">—</span>
-          </div>
-          <div class="metric">
-            <span class="label">С возможным трансфером</span>
-            <span class="value" id="metric-transfer">—</span>
-          </div>
-          <div class="metric">
-            <span class="label">Длительность скана</span>
-            <span class="value" id="metric-duration">—</span>
-          </div>
-        </div>
-        <div class="exchanges">
-          <h3>Биржи</h3>
-          <div id="exchanges-grid" class="exchanges-grid"></div>
-        </div>
-      </section>
+        </section>
 
-      <section class="card arb-card">
-        <header>
-          <h2>Арбитражные возможности</h2>
-          <span id="arb-count" class="badge">0</span>
-        </header>
-
-        <div class="filters">
-          <label class="checkbox">
-            <input type="checkbox" id="filter-transfer" />
-            Только с возможным трансфером (D+/W+)
-          </label>
-          <label>
-            <span>Поиск пары</span>
-            <input type="text" id="filter-pair" placeholder="BTC, ETH, …" />
-          </label>
-        </div>
-
-        <div class="table-wrap">
-          <table class="arb">
-            <thead>
-              <tr>
-                <th data-sort="pair">Пара</th>
-                <th data-sort="buy_exchange">Купить</th>
-                <th class="num" data-sort="buy_price">Цена покупки (ask)</th>
-                <th data-sort="sell_exchange">Продать</th>
-                <th class="num" data-sort="sell_price">Цена продажи (bid)</th>
-                <th class="num" data-sort="spread">Спред</th>
-                <th>D/W покупка</th>
-                <th>D/W продажа</th>
-                <th class="num" data-sort="buy_volume">Объём 24ч (покупка)</th>
-                <th class="num" data-sort="sell_volume">Объём 24ч (продажа)</th>
-                <th class="num" data-sort="ob_volume">Стакан, $</th>
-                <th class="num" data-sort="ob_profit">Профит, $</th>
-                <th>Сети</th>
-              </tr>
-            </thead>
-            <tbody id="arb-body">
-              <tr>
-                <td colspan="13" class="empty">Ожидание первого скана…</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <p class="footer-note">
-          Спред = (bid_sell − ask_buy) / ask_buy × 100%. D+/D− — депозит открыт/закрыт.
-          W+/W− — вывод открыт/закрыт. «?» — нет данных (нужен API-ключ биржи).
-          Объём в стакане и профит рассчитаны по пересечению ask/bid стаканов без учёта комиссий.
-        </p>
+        <section class="card stats-card">
+          <header>
+            <h2>Лог арбитражных ситуаций</h2>
+            <span id="stats-count" class="badge">0</span>
+          </header>
+          <div class="table-wrap">
+            <table class="arb stats-table">
+              <thead>
+                <tr>
+                  <th data-sort="timestamp">Время</th>
+                  <th data-sort="pair">Пара</th>
+                  <th data-sort="buy_exchange">Купить</th>
+                  <th class="num" data-sort="buy_price">Цена покупки</th>
+                  <th data-sort="sell_exchange">Продать</th>
+                  <th class="num" data-sort="sell_price">Цена продажи</th>
+                  <th class="num" data-sort="spread">Спред</th>
+                  <th class="num" data-sort="ob_volume">Стакан, $</th>
+                  <th class="num" data-sort="ob_profit">Профит, $</th>
+                  <th>Трансфер</th>
+                </tr>
+              </thead>
+              <tbody id="stats-body">
+                <tr>
+                  <td colspan="10" class="empty">Нет событий, удовлетворяющих фильтру.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="footer-note">
+            История пишется в кольцевой буфер на сервере (последние <span id="stats-buffer-info">1000</span> событий).
+            Каждое событие = одна арбитражная строка из завершённого скана. Фильтры применяются на сервере.
+          </p>
+        </section>
       </section>
     </main>
 

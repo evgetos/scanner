@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MEXC Scanner</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">M</span>
+        <span class="title">MEXC Scanner</span>
+      </div>
+
+      <nav class="tabs" role="tablist" aria-label="Разделы рынка">
+        <button class="tab active" data-tab="spot" role="tab" aria-selected="true">Спот</button>
+        <button class="tab" data-tab="futures" role="tab" aria-selected="false">Фьючерсы</button>
+      </nav>
+
+      <div class="controls">
+        <input
+          id="search"
+          type="search"
+          placeholder="Поиск по символу / монете / адресу…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="refresh" class="btn" title="Обновить данные">↻</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="status" class="status" aria-live="polite"></section>
+
+      <section id="panel-spot" class="panel active" role="tabpanel">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th data-sort="symbol">Символ</th>
+                <th data-sort="base">Монета</th>
+                <th data-sort="lastPrice" class="num">Цена</th>
+                <th data-sort="bidPrice" class="num">Bid</th>
+                <th data-sort="askPrice" class="num">Ask</th>
+                <th data-sort="priceChangePercent" class="num">24ч %</th>
+                <th data-sort="volumeQuote" class="num">Объём 24ч (quote)</th>
+                <th data-sort="depositEnable">Депозит</th>
+                <th data-sort="withdrawEnable">Вывод</th>
+                <th>Адрес контракта</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-spot"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-futures" class="panel" role="tabpanel">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th data-sort="symbol">Контракт</th>
+                <th data-sort="base">Базовая</th>
+                <th data-sort="lastPrice" class="num">Цена</th>
+                <th data-sort="bidPrice" class="num">Bid</th>
+                <th data-sort="askPrice" class="num">Ask</th>
+                <th data-sort="fundingRate" class="num">Фандинг</th>
+                <th data-sort="riseFallRate" class="num">24ч %</th>
+                <th data-sort="amount24" class="num">Объём 24ч</th>
+                <th data-sort="depositEnable">Депозит</th>
+                <th data-sort="withdrawEnable">Вывод</th>
+                <th>Адрес контракта</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-futures"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Данные через публичные эндпоинты MEXC. Кэш сервера: 30с.</span>
+      <span id="cred-status"></span>
+    </footer>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

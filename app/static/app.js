@@ -105,14 +105,6 @@
     statsBufferInfo: document.getElementById("stats-buffer-info"),
     statsHistoryFile: document.getElementById("stats-history-file"),
     statsHistoryFileSize: document.getElementById("stats-history-file-size"),
-    // Telegram
-    tgEnabled: document.getElementById("telegram-enabled"),
-    tgBotToken: document.getElementById("telegram-bot-token"),
-    tgChatId: document.getElementById("telegram-chat-id"),
-    tgTest: document.getElementById("btn-telegram-test"),
-    tgResetDedup: document.getElementById("btn-telegram-reset"),
-    tgHint: document.getElementById("telegram-hint"),
-    tgStatusBadge: document.getElementById("telegram-status-badge"),
   };
 
   const state = {
@@ -124,19 +116,6 @@
     statsSortKey: "timestamp",
     statsSortDir: "desc",
     statsRows: [],
-    // Telegram — mirrors what the server told us so we don't fight the user's typing.
-    telegram: {
-      enabled: true,
-      ready: false,
-      has_token: false,
-      chat_id: "",
-      last_error: null,
-      last_sent_at: null,
-      last_sent_count: 0,
-      total_sent: 0,
-      total_skipped_dup: 0,
-    },
-    tgInputsDirty: { token: false, chatId: false },
   };
 
   function fmtPrice(value) {
@@ -423,10 +402,6 @@
       }
     }
 
-    if (payload.telegram) {
-      renderTelegramState(payload.telegram);
-    }
-
     const result = payload.result;
     if (result) {
       elements.metricTotal.textContent = result.total_pairs.toLocaleString();
@@ -512,144 +487,6 @@
         th.classList.add(state.statsSortDir === "asc" ? "sort-asc" : "sort-desc");
       }
     });
-  }
-
-  // ---- Telegram ----
-
-  function renderTelegramState(tg) {
-    if (!tg) return;
-    state.telegram = Object.assign(state.telegram, tg);
-    // Only sync inputs from the server when the user isn't actively editing
-    // them — otherwise we'd clobber what they're typing.
-    if (elements.tgEnabled && document.activeElement !== elements.tgEnabled) {
-      elements.tgEnabled.checked = !!tg.enabled;
-    }
-    if (elements.tgChatId && !state.tgInputsDirty.chatId && document.activeElement !== elements.tgChatId) {
-      elements.tgChatId.value = tg.chat_id || "";
-    }
-    // The bot token is never echoed back — the server only confirms whether
-    // it has one (``has_token``). Show that as a placeholder cue.
-    if (elements.tgBotToken && !state.tgInputsDirty.token && document.activeElement !== elements.tgBotToken) {
-      if (tg.has_token) {
-        elements.tgBotToken.placeholder = "токен задан — оставьте пустым, чтобы не менять";
-      } else {
-        elements.tgBotToken.placeholder = "12345:ABC-… или оставьте пустым, чтобы использовать .env";
-      }
-    }
-    if (elements.tgStatusBadge) {
-      let label;
-      if (!tg.has_token || !tg.chat_id) {
-        label = "не настроен";
-      } else if (!tg.enabled) {
-        label = "выкл";
-      } else if (tg.last_error) {
-        label = "ошибка";
-      } else {
-        label = "готов";
-      }
-      elements.tgStatusBadge.textContent = label;
-    }
-    if (elements.tgTest) {
-      elements.tgTest.disabled = !(tg.has_token && tg.chat_id);
-    }
-    if (elements.tgHint && !elements.tgHint.dataset.transient) {
-      const parts = [];
-      if (tg.last_sent_at) {
-        const dt = new Date(tg.last_sent_at * 1000).toLocaleTimeString();
-        parts.push("последняя отправка " + dt);
-      }
-      if (typeof tg.total_sent === "number") {
-        parts.push("отправлено всего " + tg.total_sent);
-      }
-      if (typeof tg.total_skipped_dup === "number" && tg.total_skipped_dup > 0) {
-        parts.push("дубликатов пропущено " + tg.total_skipped_dup);
-      }
-      if (tg.last_error) {
-        parts.push("ошибка: " + tg.last_error);
-      }
-      elements.tgHint.textContent = parts.join(" • ");
-    }
-  }
-
-  function setTelegramHint(text, persistMs) {
-    if (!elements.tgHint) return;
-    elements.tgHint.dataset.transient = "1";
-    elements.tgHint.textContent = text;
-    clearTimeout(setTelegramHint._t);
-    setTelegramHint._t = setTimeout(() => {
-      delete elements.tgHint.dataset.transient;
-      renderTelegramState(state.telegram);
-    }, persistMs || 4000);
-  }
-
-  async function pushTelegramSettings(extraPayload) {
-    // Only send fields the user actually touched, so empty inputs are
-    // interpreted as "keep the existing value" by the server.
-    const body = Object.assign({}, extraPayload || {});
-    if (state.tgInputsDirty.token) {
-      body.bot_token = elements.tgBotToken.value;
-      state.tgInputsDirty.token = false;
-    }
-    if (state.tgInputsDirty.chatId) {
-      body.chat_id = elements.tgChatId.value;
-      state.tgInputsDirty.chatId = false;
-    }
-    if (typeof body.enabled !== "boolean" && elements.tgEnabled) {
-      // Only include the toggle when the user is actually toggling it.
-    }
-    try {
-      const response = await fetch("/api/telegram/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!response.ok) {
-        const text = await response.text();
-        setTelegramHint("Не удалось сохранить: " + text.slice(0, 120));
-        return;
-      }
-      const data = await response.json();
-      // Clear the token field after a successful save so it's not visible.
-      if (typeof body.bot_token !== "undefined" && body.bot_token) {
-        elements.tgBotToken.value = "";
-      }
-      renderTelegramState(data.telegram);
-      setTelegramHint("Настройки Telegram сохранены • " + new Date().toLocaleTimeString());
-    } catch (error) {
-      setTelegramHint("Ошибка: " + error.message);
-      console.error("pushTelegramSettings failed", error);
-    }
-  }
-
-  async function sendTelegramTest() {
-    if (!elements.tgTest) return;
-    elements.tgTest.disabled = true;
-    setTelegramHint("Отправляю…");
-    try {
-      const response = await fetch("/api/telegram/test", { method: "POST" });
-      const data = await response.json();
-      if (data.telegram) renderTelegramState(data.telegram);
-      if (data.ok) {
-        setTelegramHint("Тест отправлен • " + new Date().toLocaleTimeString());
-      } else {
-        setTelegramHint("Ошибка: " + (data.error || "unknown"), 8000);
-      }
-    } catch (error) {
-      setTelegramHint("Ошибка: " + error.message, 8000);
-    } finally {
-      elements.tgTest.disabled = !(state.telegram.has_token && state.telegram.chat_id);
-    }
-  }
-
-  async function resetTelegramDedup() {
-    try {
-      const response = await fetch("/api/telegram/reset_dedup", { method: "POST" });
-      const data = await response.json();
-      if (data.telegram) renderTelegramState(data.telegram);
-      setTelegramHint("Память дедупликации очищена • " + new Date().toLocaleTimeString());
-    } catch (error) {
-      setTelegramHint("Ошибка: " + error.message);
-    }
   }
 
   // Push the current stats-tab thresholds to the server so that the next
@@ -980,31 +817,6 @@
     // Initial sync: ensure the server sees the (possibly localStorage-restored)
     // filter values on page load so the very first scan respects them.
     pushStatsFilter();
-
-    // Telegram controls
-    if (elements.tgEnabled) {
-      elements.tgEnabled.addEventListener("change", () => {
-        pushTelegramSettings({ enabled: !!elements.tgEnabled.checked });
-      });
-    }
-    if (elements.tgBotToken) {
-      elements.tgBotToken.addEventListener("input", () => {
-        state.tgInputsDirty.token = true;
-      });
-      elements.tgBotToken.addEventListener("change", () => {
-        if (state.tgInputsDirty.token) pushTelegramSettings({});
-      });
-    }
-    if (elements.tgChatId) {
-      elements.tgChatId.addEventListener("input", () => {
-        state.tgInputsDirty.chatId = true;
-      });
-      elements.tgChatId.addEventListener("change", () => {
-        if (state.tgInputsDirty.chatId) pushTelegramSettings({});
-      });
-    }
-    if (elements.tgTest) elements.tgTest.addEventListener("click", sendTelegramTest);
-    if (elements.tgResetDedup) elements.tgResetDedup.addEventListener("click", resetTelegramDedup);
 
     // Restore tab.
     const savedTab = getLs("ui.tab", "arbitrage");

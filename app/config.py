@@ -56,13 +56,6 @@ class ScannerConfig:
     # 0 (or any non-positive value) means "no upper limit".
     max_spread: float = field(default_factory=lambda: _env_float("SCANNER_MAX_SPREAD", 0.0))
     orderbook_limit: int = field(default_factory=lambda: _env_int("SCANNER_OB_LIMIT", 50))
-    # Budget (in USDT) used to compute the "Profit at $N" column — i.e. how
-    # much profit you could actually capture if you spent at most this many
-    # USDT walking the buy book and selling into the sell book. Set to 0 to
-    # disable the calculation (the column will show "—").
-    orderbook_budget_usdt: float = field(
-        default_factory=lambda: _env_float("SCANNER_OB_BUDGET", 1000.0)
-    )
 
     mexc_api_key: str = field(default_factory=lambda: _env("MEXC_API_KEY"))
     mexc_secret_key: str = field(default_factory=lambda: _env("MEXC_SECRET_KEY"))
@@ -96,15 +89,3 @@ class AppConfig:
             "SCANNER_HISTORY_FILE", str(_default_history_file())
         )
     )
-    # MAX messenger bot — these mirror the Telegram pattern (token + chat_id
-    # + on/off + optional proxy). Empty strings disable the integration; the
-    # UI can also override any of these at runtime via /api/max/settings.
-    max_bot_token: str = field(default_factory=lambda: _env("MAX_BOT_TOKEN", ""))
-    max_chat_id: str = field(default_factory=lambda: _env("MAX_CHAT_ID", ""))
-    max_recipient_kind: str = field(
-        default_factory=lambda: _env("MAX_RECIPIENT_KIND", "chat")
-    )
-    max_enabled: bool = field(
-        default_factory=lambda: _env("MAX_ENABLED", "1") not in ("0", "false", "False")
-    )
-    max_proxy: str = field(default_factory=lambda: _env("MAX_PROXY", ""))

@@ -43,6 +43,10 @@ def _row_to_history_event(row: Dict[str, Any], timestamp: float) -> Dict[str, An
         "sell_volume": row.get("sell_volume"),
         "ob_volume_usdt": ob.get("volume_usdt") if ob else None,
         "ob_profit_usdt": ob.get("profit_usdt") if ob else None,
+        # Budget-capped variant ("profit if I had spent exactly $N").
+        "ob_budget_usdt": ob.get("budget_usdt") if ob else None,
+        "ob_profit_at_budget_usdt": ob.get("profit_at_budget_usdt") if ob else None,
+        "ob_filled_usdt": ob.get("filled_usdt") if ob else None,
         "has_transfer": row.get("has_transfer", False),
     }
 
@@ -190,6 +194,7 @@ class ScannerState:
                 "min_spread": cfg.min_spread,
                 "max_spread": cfg.max_spread,
                 "orderbook_limit": cfg.orderbook_limit,
+                "orderbook_budget_usdt": cfg.orderbook_budget_usdt,
             }
             result = await run_scan(cfg, arbitrage_limit=APP_CONFIG.arbitrage_limit)
             result_dict = scan_result_to_dict(result)
@@ -296,6 +301,17 @@ class ScanOverrides(BaseModel):
     max_spread: Optional[float] = Field(default=None, ge=0)
     refresh_interval: Optional[float] = Field(
         default=None, ge=5, description="Background loop period in seconds (min 5)."
+    )
+    orderbook_limit: Optional[int] = Field(
+        default=None,
+        ge=5,
+        le=500,
+        description="How many orderbook levels to fetch per side (5..500).",
+    )
+    orderbook_budget_usdt: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description="USDT budget used to compute the 'profit at $N' column. 0 disables.",
     )
 
 

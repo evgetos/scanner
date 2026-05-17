@@ -90,9 +90,19 @@ class ChainMatch:
 
 @dataclass
 class OrderbookAnalysis:
+    # Aggregate profit from walking the entire intersected book — best case if
+    # you had unlimited capital and bought every profitable level.
     volume_usdt: float
     avg_spread: float
     profit_usdt: float
+    # "What if I spent exactly N USDT?" — capped variant. ``budget_usdt``
+    # is the input cap; ``profit_at_budget_usdt`` and
+    # ``filled_usdt`` are the achievable spend / profit within that budget
+    # given the current depth. ``filled_usdt`` can be < ``budget_usdt`` when
+    # the book runs out of profitable levels before the cap is hit.
+    budget_usdt: float = 0.0
+    profit_at_budget_usdt: float = 0.0
+    filled_usdt: float = 0.0
 
 
 @dataclass
@@ -1080,16 +1090,38 @@ async def fetch_orderbook(
 def calc_arb_volume(
     buy_asks: List[List[float]],
     sell_bids: List[List[float]],
-) -> Tuple[float, float]:
-    """Walk the books and accumulate profitable arbitrage volume."""
+    budget_usdt: float = 0.0,
+) -> Tuple[float, float, float, float]:
+    """Walk the books and accumulate profitable arbitrage volume.
+
+    Returns a 4-tuple ``(total_cost, avg_spread_pct, profit_at_budget,
+    filled_at_budget)``:
+
+    * ``total_cost`` — sum of all profitable spend (full intersection of
+      the two books). This is the unconstrained best-case spend you'd
+      need if you wanted to capture every profitable level.
+    * ``avg_spread_pct`` — average spread across all profitable trades,
+      weighted by USDT spent.
+    * ``profit_at_budget`` — USDT profit you would realize if you stopped
+      buying once you'd spent ``budget_usdt``. The last partial level is
+      truncated proportionally so the numbers line up with reality.
+    * ``filled_at_budget`` — how much of ``budget_usdt`` was actually
+      filled (== budget unless the profitable depth ran out earlier).
+
+    Pass ``budget_usdt <= 0`` to skip the budget calculation entirely —
+    the last two return values will be 0.0.
+    """
     asks = sorted([a for a in buy_asks if a[0] > 0 and a[1] > 0], key=lambda x: x[0])
     bids = sorted([b for b in sell_bids if b[0] > 0 and b[1] > 0], key=lambda x: -x[0])
 
     if not asks or not bids:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0
 
     total_cost = 0.0
     total_revenue = 0.0
+    profit_at_budget = 0.0
+    filled_at_budget = 0.0
+    budget_done = budget_usdt <= 0
     ai = bi = 0
     ask_remain = asks[0][1]
     bid_remain = bids[0][1]
@@ -1101,8 +1133,26 @@ def calc_arb_volume(
             break
 
         trade_qty = min(ask_remain, bid_remain)
-        total_cost += trade_qty * ask_price
-        total_revenue += trade_qty * bid_price
+        cost = trade_qty * ask_price
+        revenue = trade_qty * bid_price
+
+        # Budget-bounded variant: walk in lockstep but stop spending once
+        # we hit ``budget_usdt``. The very last level is truncated
+        # proportionally so we don't overshoot the cap.
+        if not budget_done:
+            remaining_budget = budget_usdt - filled_at_budget
+            if cost <= remaining_budget:
+                profit_at_budget += revenue - cost
+                filled_at_budget += cost
+            else:
+                # Truncate this level to exactly fill the remaining budget.
+                frac = remaining_budget / cost if cost > 0 else 0.0
+                profit_at_budget += (revenue - cost) * frac
+                filled_at_budget += remaining_budget
+                budget_done = True
+
+        total_cost += cost
+        total_revenue += revenue
 
         ask_remain -= trade_qty
         bid_remain -= trade_qty
@@ -1117,9 +1167,9 @@ def calc_arb_volume(
                 bid_remain = bids[bi][1]
 
     if total_cost <= 0:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0
     avg_spread = ((total_revenue - total_cost) / total_cost) * 100.0
-    return total_cost, avg_spread
+    return total_cost, avg_spread, profit_at_budget, filled_at_budget
 
 
 async def analyze_orderbooks(
@@ -1169,15 +1219,21 @@ async def analyze_orderbooks(
 
     responses = await asyncio.gather(*tasks)
 
+    budget = max(0.0, float(config.orderbook_budget_usdt or 0.0))
     for index, pair in enumerate(task_pairs):
         buy_asks, _ = responses[2 * index]
         _, sell_bids = responses[2 * index + 1]
-        volume_usdt, avg_spread = calc_arb_volume(buy_asks, sell_bids)
+        volume_usdt, avg_spread, profit_at_budget, filled = calc_arb_volume(
+            buy_asks, sell_bids, budget_usdt=budget
+        )
         profit = volume_usdt * avg_spread / 100.0 if volume_usdt > 0 else 0.0
         results[pair] = OrderbookAnalysis(
             volume_usdt=volume_usdt,
             avg_spread=avg_spread,
             profit_usdt=profit,
+            budget_usdt=budget,
+            profit_at_budget_usdt=profit_at_budget,
+            filled_usdt=filled,
         )
 
     return results

@@ -72,6 +72,10 @@
     inputMinSpread: document.getElementById("input-min-spread"),
     inputMaxSpread: document.getElementById("input-max-spread"),
     inputRefreshInterval: document.getElementById("input-refresh-interval"),
+    inputOrderbookLimit: document.getElementById("input-orderbook-limit"),
+    inputOrderbookBudget: document.getElementById("input-orderbook-budget"),
+    thArbProfitBudget: document.getElementById("th-arb-profit-budget"),
+    thStatsProfitBudget: document.getElementById("th-stats-profit-budget"),
     metricTotal: document.getElementById("metric-total"),
     metricMulti: document.getElementById("metric-multi"),
     metricRows: document.getElementById("metric-rows"),
@@ -213,6 +217,8 @@
         case "sell_volume": return row.sell_volume;
         case "ob_volume": return row.orderbook ? row.orderbook.volume_usdt : -1;
         case "ob_profit": return row.orderbook ? row.orderbook.profit_usdt : -1;
+        case "ob_profit_budget":
+          return row.orderbook ? (row.orderbook.profit_at_budget_usdt || 0) : -1;
         case "timestamp": return row.timestamp;
         default: return 0;
       }
@@ -245,7 +251,7 @@
 
     if (rows.length === 0) {
       elements.arbBody.innerHTML =
-        '<tr><td colspan="13" class="empty">Нет данных или все строки отфильтрованы.</td></tr>';
+        '<tr><td colspan="14" class="empty">Нет данных или все строки отфильтрованы.</td></tr>';
       return;
     }
 
@@ -254,6 +260,15 @@
         const ob = row.orderbook;
         const obVol = ob ? fmtUsd(ob.volume_usdt) : "—";
         const obProfit = ob && ob.volume_usdt > 0 ? fmtUsd(ob.profit_usdt) : "—";
+        // "Profit at $N": only meaningful when the user actually configured a
+        // non-zero budget AND the orderbook had enough profitable depth.
+        const budgetCfg = ob && ob.budget_usdt > 0;
+        const obProfitAtBudget = budgetCfg && ob.filled_usdt > 0
+          ? fmtUsd(ob.profit_at_budget_usdt)
+          : "—";
+        const obProfitTitle = budgetCfg
+          ? ("Бюджет $" + fmtUsd(ob.budget_usdt) + ", фактически выкуплено $" + fmtUsd(ob.filled_usdt))
+          : "Бюджет $N выключен (поле в форме = 0)";
         return (
           "<tr>" +
           '<td class="pair">' + escapeHtml(row.pair) + "</td>" +
@@ -268,6 +283,7 @@
           '<td class="num">' + fmtUsd(row.sell_volume) + "</td>" +
           '<td class="num">' + obVol + "</td>" +
           '<td class="num">' + obProfit + "</td>" +
+          '<td class="num" title="' + escapeHtml(obProfitTitle) + '">' + obProfitAtBudget + "</td>" +
           '<td class="chains-cell">' + renderChains(row.common_chains) + "</td>" +
           "</tr>"
         );
@@ -330,6 +346,32 @@
     ) {
       elements.inputRefreshInterval.placeholder = String(payload.refresh_interval | 0);
     }
+
+    // Mirror current orderbook-depth + budget into the form (placeholder
+    // only — never overwrite a value the user is editing) and into the
+    // "Profit at $N" column header so the user sees the actual N being
+    // used by the backend.
+    const cfg = payload.config || {};
+    if (
+      elements.inputOrderbookLimit &&
+      elements.inputOrderbookLimit.value === "" &&
+      cfg.orderbook_limit
+    ) {
+      elements.inputOrderbookLimit.placeholder = String(cfg.orderbook_limit | 0);
+    }
+    if (
+      elements.inputOrderbookBudget &&
+      elements.inputOrderbookBudget.value === "" &&
+      cfg.orderbook_budget_usdt != null
+    ) {
+      elements.inputOrderbookBudget.placeholder = String(cfg.orderbook_budget_usdt | 0);
+    }
+    const budget = cfg.orderbook_budget_usdt;
+    const budgetLabel = (budget && budget > 0)
+      ? ("Профит при $" + (budget | 0))
+      : "Профит при $N";
+    if (elements.thArbProfitBudget) elements.thArbProfitBudget.textContent = budgetLabel;
+    if (elements.thStatsProfitBudget) elements.thStatsProfitBudget.textContent = budgetLabel;
 
     state.paused = !!payload.paused;
     updatePauseButton();
@@ -435,6 +477,7 @@
         case "spread": return row.spread;
         case "ob_volume": return row.ob_volume_usdt;
         case "ob_profit": return row.ob_profit_usdt;
+        case "ob_profit_budget": return row.ob_profit_at_budget_usdt;
         default: return 0;
       }
     };
@@ -454,7 +497,7 @@
 
     if (rows.length === 0) {
       elements.statsBody.innerHTML =
-        '<tr><td colspan="10" class="empty">Нет событий, удовлетворяющих фильтру.</td></tr>';
+        '<tr><td colspan="11" class="empty">Нет событий, удовлетворяющих фильтру.</td></tr>';
     } else {
       elements.statsBody.innerHTML = rows
         .map((row) => {
@@ -463,6 +506,15 @@
             : '<span class="transfer-tag no">—</span>';
           const obVol = row.ob_volume_usdt != null ? fmtUsd(row.ob_volume_usdt) : "—";
           const obProfit = row.ob_profit_usdt != null ? fmtUsd(row.ob_profit_usdt) : "—";
+          // Older history events (recorded before the budget feature) won't
+          // have these fields — fall back to "—".
+          const obProfitBudget = (row.ob_profit_at_budget_usdt != null && row.ob_filled_usdt > 0)
+            ? fmtUsd(row.ob_profit_at_budget_usdt)
+            : "—";
+          const budgetTitle = row.ob_budget_usdt != null && row.ob_budget_usdt > 0
+            ? ("Бюджет на момент записи: $" + fmtUsd(row.ob_budget_usdt) +
+               " / выкуплено $" + fmtUsd(row.ob_filled_usdt || 0))
+            : "Бюджет на момент записи: выкл";
           return (
             "<tr>" +
             '<td class="timestamp">' + fmtDateTime(row.timestamp) + "</td>" +
@@ -474,6 +526,7 @@
             '<td class="num spread-positive">' + fmtPct(row.spread) + "</td>" +
             '<td class="num">' + obVol + "</td>" +
             '<td class="num">' + obProfit + "</td>" +
+            '<td class="num" title="' + escapeHtml(budgetTitle) + '">' + obProfitBudget + "</td>" +
             "<td>" + transfer + "</td>" +
             "</tr>"
           );
@@ -597,6 +650,14 @@
     if (elements.inputRefreshInterval && elements.inputRefreshInterval.value !== "") {
       const ri = Number(elements.inputRefreshInterval.value);
       if (Number.isFinite(ri) && ri >= 5) body.refresh_interval = ri;
+    }
+    if (elements.inputOrderbookLimit && elements.inputOrderbookLimit.value !== "") {
+      const ol = Number(elements.inputOrderbookLimit.value);
+      if (Number.isFinite(ol) && ol >= 5 && ol <= 500) body.orderbook_limit = ol;
+    }
+    if (elements.inputOrderbookBudget && elements.inputOrderbookBudget.value !== "") {
+      const ob = Number(elements.inputOrderbookBudget.value);
+      if (Number.isFinite(ob) && ob >= 0) body.orderbook_budget_usdt = ob;
     }
     return body;
   }
@@ -775,6 +836,8 @@
       elements.inputMinSpread,
       elements.inputMaxSpread,
       elements.inputRefreshInterval,
+      elements.inputOrderbookLimit,
+      elements.inputOrderbookBudget,
     ].forEach((el) => {
       if (!el) return;
       el.addEventListener("input", debouncedAutoApply);

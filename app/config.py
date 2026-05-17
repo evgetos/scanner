@@ -56,6 +56,13 @@ class ScannerConfig:
     # 0 (or any non-positive value) means "no upper limit".
     max_spread: float = field(default_factory=lambda: _env_float("SCANNER_MAX_SPREAD", 0.0))
     orderbook_limit: int = field(default_factory=lambda: _env_int("SCANNER_OB_LIMIT", 50))
+    # Budget (in USDT) used to compute the "Profit at $N" column — i.e. how
+    # much profit you could actually capture if you spent at most this many
+    # USDT walking the buy book and selling into the sell book. Set to 0 to
+    # disable the calculation (the column will show "—").
+    orderbook_budget_usdt: float = field(
+        default_factory=lambda: _env_float("SCANNER_OB_BUDGET", 1000.0)
+    )
 
     mexc_api_key: str = field(default_factory=lambda: _env("MEXC_API_KEY"))
     mexc_secret_key: str = field(default_factory=lambda: _env("MEXC_SECRET_KEY"))

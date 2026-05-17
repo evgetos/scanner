@@ -61,6 +61,14 @@
                 <span>Авто-рефреш, c <em title="Период фонового цикла, минимум 5 c">(мин. 5)</em></span>
                 <input type="number" id="input-refresh-interval" min="5" step="5" placeholder="60" />
               </label>
+              <label>
+                <span>Глубина стакана, уровней <em title="Сколько уровней стакана запрашивать у бирж (5..500). Чем больше — тем точнее «Стакан, $» и «Профит, $».">(5..500)</em></span>
+                <input type="number" id="input-orderbook-limit" min="5" max="500" step="10" placeholder="50" />
+              </label>
+              <label>
+                <span>Бюджет для «Профит при $N», $ <em title="USDT, которые бот «потратит» на покупке по стакану — этим бюджетом считается отдельная колонка «Профит при $N». 0 — выключить колонку.">(0 = выкл)</em></span>
+                <input type="number" id="input-orderbook-budget" min="0" step="100" placeholder="1000" />
+              </label>
               <div class="actions">
                 <button type="submit" id="btn-apply-params" title="Применить параметры и сразу запустить скан (параметры также применяются автоматически при изменении)">Сканировать сейчас</button>
                 <span id="form-hint" class="hint">Параметры применяются автоматически.</span>
@@ -139,6 +147,7 @@
                   <th class="num" data-sort="sell_volume">Объём 24ч (продажа)</th>
                   <th class="num" data-sort="ob_volume">Стакан, $</th>
                   <th class="num" data-sort="ob_profit">Профит, $</th>
+                  <th class="num" data-sort="ob_profit_budget" id="th-arb-profit-budget">Профит при $N</th>
                   <th>Сети</th>
                 </tr>
               </thead>
@@ -213,6 +222,7 @@
                   <th class="num" data-sort="spread">Спред</th>
                   <th class="num" data-sort="ob_volume">Стакан, $</th>
                   <th class="num" data-sort="ob_profit">Профит, $</th>
+                  <th class="num" data-sort="ob_profit_budget" id="th-stats-profit-budget">Профит при $N</th>
                   <th>Трансфер</th>
                 </tr>
               </thead>

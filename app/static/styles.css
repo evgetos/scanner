@@ -262,6 +262,18 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
+.badge--ok {
+  background: rgba(46, 160, 67, 0.18);
+  border-color: rgba(46, 160, 67, 0.5);
+  color: #69d27a;
+}
+
+.badge--error {
+  background: rgba(229, 83, 75, 0.18);
+  border-color: rgba(229, 83, 75, 0.5);
+  color: #f08881;
+}
+
 /* Collapsible cards */
 
 .collapse-toggle {

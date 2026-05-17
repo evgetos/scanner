@@ -166,6 +166,53 @@
             Клик по названию биржи открывает торговую страницу пары в новой вкладке.
           </p>
         </section>
+
+        <section class="card max-card collapsible" data-collapse-key="max">
+          <header>
+            <button type="button" class="collapse-toggle" aria-expanded="false">
+              <span class="collapse-arrow">▸</span>
+              <h2>Мессенджер MAX</h2>
+            </button>
+            <span id="max-status" class="badge">не настроен</span>
+          </header>
+          <div class="collapsible-body" style="display:none">
+            <div class="stats-form">
+              <label class="checkbox">
+                <input type="checkbox" id="max-enabled" />
+                Уведомления включены
+              </label>
+              <label>
+                <span>Bot Token <em title="Получи в @MasterBot → Чат-боты → Интеграция → Получить токен">(@MasterBot)</em></span>
+                <input type="password" id="max-bot-token" placeholder="••••••••" autocomplete="off" />
+              </label>
+              <label>
+                <span>Тип получателя</span>
+                <select id="max-recipient-kind">
+                  <option value="chat">Чат</option>
+                  <option value="user">Пользователь</option>
+                </select>
+              </label>
+              <label>
+                <span>ID получателя <em title="Числовой chat_id (или user_id, если выбран тип «Пользователь»)">(числовой)</em></span>
+                <input type="text" id="max-chat-id" placeholder="123456789" />
+              </label>
+              <label>
+                <span>Прокси (опционально) <em title="Если пусто — будет использован SCANNER_PROXY">(SOCKS/HTTP)</em></span>
+                <input type="text" id="max-proxy" placeholder="socks5://user:pass@host:1080" />
+              </label>
+              <div class="stats-actions">
+                <button type="button" id="btn-max-test" class="btn-secondary">✉ Тестовое сообщение</button>
+                <button type="button" id="btn-max-reset-dedup" class="btn-secondary" title="Очистить память дедупликации — все накопленные ситуации снова пойдут как новые">↻ Сбросить дедуп</button>
+                <span class="hint" id="max-hint">Дедуп по «пара | купить→продать», до 5000 ключей.</span>
+              </div>
+              <p class="footer-note">
+                После каждого скана MAX получает одно сообщение со списком ситуаций, прошедших фильтр на вкладке «Статистика», но только тех, что не было в предыдущей отправке.
+                Длинные списки разбиваются на несколько сообщений (≤ 4000 символов).
+                <span id="max-counters"></span>
+              </p>
+            </div>
+          </div>
+        </section>
       </section>
 
       <section id="view-stats" class="view">

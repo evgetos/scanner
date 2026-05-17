@@ -109,6 +109,29 @@
     statsBufferInfo: document.getElementById("stats-buffer-info"),
     statsHistoryFile: document.getElementById("stats-history-file"),
     statsHistoryFileSize: document.getElementById("stats-history-file-size"),
+    // MAX messenger
+    maxStatus: document.getElementById("max-status"),
+    maxEnabled: document.getElementById("max-enabled"),
+    maxBotToken: document.getElementById("max-bot-token"),
+    maxChatId: document.getElementById("max-chat-id"),
+    maxRecipientKind: document.getElementById("max-recipient-kind"),
+    maxProxy: document.getElementById("max-proxy"),
+    btnMaxTest: document.getElementById("btn-max-test"),
+    btnMaxResetDedup: document.getElementById("btn-max-reset-dedup"),
+    maxHint: document.getElementById("max-hint"),
+    maxCounters: document.getElementById("max-counters"),
+  };
+
+  // The MAX bot token is sensitive — once the user types it in, we send
+  // it to the server but the server never echoes it back. We use these
+  // flags so renderState() only seeds inputs from the server when the
+  // user hasn't touched them, avoiding clobbering pending edits.
+  const maxInputsDirty = {
+    botToken: false,
+    chatId: false,
+    recipientKind: false,
+    proxy: false,
+    enabled: false,
   };
 
   const state = {
@@ -444,6 +467,8 @@
       }
     }
 
+    if (payload.max) renderMaxState(payload.max);
+
     const result = payload.result;
     if (result) {
       elements.metricTotal.textContent = result.total_pairs.toLocaleString();
@@ -459,6 +484,148 @@
     } else {
       state.rows = [];
       renderRows();
+    }
+  }
+
+  // ---- MAX messenger ----
+
+  function renderMaxState(mx) {
+    // Status badge.
+    let statusText = "не настроен";
+    let statusCls = "badge";
+    if (!mx.ready) {
+      statusText = "не настроен";
+    } else if (!mx.enabled) {
+      statusText = "выкл";
+    } else if (mx.last_error) {
+      statusText = "ошибка";
+      statusCls = "badge badge--error";
+    } else {
+      statusText = "готов";
+      statusCls = "badge badge--ok";
+    }
+    if (elements.maxStatus) {
+      elements.maxStatus.textContent = statusText;
+      elements.maxStatus.className = statusCls;
+    }
+
+    // Form inputs: only seed values the user hasn't touched yet.
+    if (elements.maxEnabled && !maxInputsDirty.enabled) {
+      elements.maxEnabled.checked = !!mx.enabled;
+    }
+    if (elements.maxChatId && !maxInputsDirty.chatId) {
+      elements.maxChatId.value = mx.chat_id || "";
+    }
+    if (elements.maxRecipientKind && !maxInputsDirty.recipientKind) {
+      elements.maxRecipientKind.value = mx.recipient_kind || "chat";
+    }
+    if (elements.maxProxy && !maxInputsDirty.proxy) {
+      // Server returns masked credentials — we never reveal real password.
+      elements.maxProxy.placeholder = mx.proxy || "socks5://user:pass@host:1080";
+    }
+    // Bot token is write-only; placeholder hints whether one is set.
+    if (elements.maxBotToken && !maxInputsDirty.botToken) {
+      elements.maxBotToken.placeholder = mx.has_token
+        ? "•••••••• (токен задан)"
+        : "введите токен из @MasterBot";
+    }
+
+    // Counters + last-sent line.
+    if (elements.maxCounters) {
+      const parts = [];
+      if (mx.total_sent) parts.push("отправлено: " + mx.total_sent);
+      if (mx.total_skipped_dup) parts.push("дубликатов пропущено: " + mx.total_skipped_dup);
+      if (mx.last_sent_at) parts.push("последняя отправка: " + fmtTime(mx.last_sent_at));
+      elements.maxCounters.textContent = parts.length ? "  · " + parts.join(" · ") : "";
+    }
+    if (elements.maxHint) {
+      if (mx.last_error) {
+        elements.maxHint.textContent = "Ошибка: " + mx.last_error;
+      } else if (mx.proxy) {
+        elements.maxHint.textContent =
+          "Прокси: " + mx.proxy + " (" + (mx.proxy_source === "max"
+            ? "MAX_PROXY"
+            : (mx.proxy_source === "scanner" ? "SCANNER_PROXY" : "")) + ")";
+      } else {
+        elements.maxHint.textContent = "Без прокси. Дедуп по «пара | купить→продать», до " +
+          (mx.dedup_capacity || 5000) + " ключей.";
+      }
+    }
+  }
+
+  function readMaxBody(includeToken) {
+    const body = {
+      enabled: !!elements.maxEnabled.checked,
+      chat_id: elements.maxChatId.value.trim(),
+      recipient_kind: elements.maxRecipientKind.value || "chat",
+      proxy: elements.maxProxy.value.trim(),
+    };
+    // Only ship the token if the user actually typed something — otherwise
+    // we'd accidentally clear it (the field is empty by design after a save).
+    if (includeToken && elements.maxBotToken.value !== "") {
+      body.bot_token = elements.maxBotToken.value;
+    }
+    return body;
+  }
+
+  async function pushMaxSettings() {
+    try {
+      const response = await fetch("/api/max/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(readMaxBody(true)),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        elements.maxHint.textContent = "Ошибка сохранения: " + text.slice(0, 200);
+        return;
+      }
+      const data = await response.json();
+      // Reset dirty flags (server now reflects user input).
+      for (const k of Object.keys(maxInputsDirty)) maxInputsDirty[k] = false;
+      // Clear the token field after a successful save so it's not visible.
+      elements.maxBotToken.value = "";
+      if (data.max) renderMaxState(data.max);
+      elements.maxHint.textContent =
+        "Сохранено • " + new Date().toLocaleTimeString();
+    } catch (error) {
+      elements.maxHint.textContent = "Ошибка сети: " + error.message;
+    }
+  }
+
+  async function testMax() {
+    elements.btnMaxTest.disabled = true;
+    elements.maxHint.textContent = "Отправка…";
+    try {
+      // Save first so the server sees the latest token / chat_id / proxy.
+      await pushMaxSettings();
+      const response = await fetch("/api/max/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await response.json();
+      if (data.max) renderMaxState(data.max);
+      if (data.ok) {
+        elements.maxHint.textContent = "Тестовое сообщение отправлено.";
+      } else {
+        elements.maxHint.textContent = "Ошибка: " + (data.error || "unknown");
+      }
+    } catch (error) {
+      elements.maxHint.textContent = "Ошибка сети: " + error.message;
+    } finally {
+      elements.btnMaxTest.disabled = false;
+    }
+  }
+
+  async function resetMaxDedup() {
+    try {
+      const response = await fetch("/api/max/reset_dedup", { method: "POST" });
+      const data = await response.json();
+      if (data.max) renderMaxState(data.max);
+      elements.maxHint.textContent = "Память дедупа очищена.";
+    } catch (error) {
+      elements.maxHint.textContent = "Ошибка сети: " + error.message;
     }
   }
 
@@ -884,6 +1051,33 @@
     // Restore tab.
     const savedTab = getLs("ui.tab", "arbitrage");
     switchTab(savedTab === "stats" ? "stats" : "arbitrage");
+
+    // MAX messenger controls. Inputs auto-save on change (debounced) so the
+    // user doesn't need a separate "save" button.
+    if (elements.btnMaxTest) elements.btnMaxTest.addEventListener("click", testMax);
+    if (elements.btnMaxResetDedup) elements.btnMaxResetDedup.addEventListener("click", resetMaxDedup);
+    const debouncedMaxSave = debounce(pushMaxSettings, 600);
+    const wire = (el, dirtyKey) => {
+      if (!el) return;
+      el.addEventListener("input", () => {
+        maxInputsDirty[dirtyKey] = true;
+        debouncedMaxSave();
+      });
+      el.addEventListener("change", () => {
+        maxInputsDirty[dirtyKey] = true;
+        pushMaxSettings();
+      });
+    };
+    wire(elements.maxBotToken, "botToken");
+    wire(elements.maxChatId, "chatId");
+    wire(elements.maxRecipientKind, "recipientKind");
+    wire(elements.maxProxy, "proxy");
+    if (elements.maxEnabled) {
+      elements.maxEnabled.addEventListener("change", () => {
+        maxInputsDirty.enabled = true;
+        pushMaxSettings();
+      });
+    }
 
     // Polling loops.
     poll();

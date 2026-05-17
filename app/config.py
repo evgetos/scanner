@@ -96,3 +96,15 @@ class AppConfig:
             "SCANNER_HISTORY_FILE", str(_default_history_file())
         )
     )
+    # MAX messenger bot — these mirror the Telegram pattern (token + chat_id
+    # + on/off + optional proxy). Empty strings disable the integration; the
+    # UI can also override any of these at runtime via /api/max/settings.
+    max_bot_token: str = field(default_factory=lambda: _env("MAX_BOT_TOKEN", ""))
+    max_chat_id: str = field(default_factory=lambda: _env("MAX_CHAT_ID", ""))
+    max_recipient_kind: str = field(
+        default_factory=lambda: _env("MAX_RECIPIENT_KIND", "chat")
+    )
+    max_enabled: bool = field(
+        default_factory=lambda: _env("MAX_ENABLED", "1") not in ("0", "false", "False")
+    )
+    max_proxy: str = field(default_factory=lambda: _env("MAX_PROXY", ""))

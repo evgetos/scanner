@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from .config import AppConfig, ScannerConfig
 from .history_store import HistoryStore
 from .scanner_core import run_scan, scan_result_to_dict, EXCHANGES_ORDER
+from .telegram_notifier import TelegramNotifier
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -63,6 +64,12 @@ class ScannerState:
         self._overrides: Dict[str, Any] = {}
         self.history: Deque[Dict[str, Any]] = deque(maxlen=APP_CONFIG.history_limit)
         self.history_store = HistoryStore(APP_CONFIG.history_file or None)
+        # Telegram notifier — disabled gracefully when no token / chat id.
+        self.telegram = TelegramNotifier(
+            bot_token=APP_CONFIG.telegram_bot_token,
+            chat_id=APP_CONFIG.telegram_chat_id,
+            enabled=APP_CONFIG.telegram_enabled,
+        )
         # The user-controlled stats filter is the gatekeeper for the
         # persistent history: only events that pass these thresholds get
         # written to disk / kept in the ring buffer. Defaults mirror the
@@ -148,7 +155,7 @@ class ScannerState:
                 setattr(cfg, key, value)
         return cfg
 
-    def _record_history(self, result_dict: Dict[str, Any]) -> None:
+    def _record_history(self, result_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
         ts = result_dict.get("finished_at") or time.time()
         new_events: List[Dict[str, Any]] = []
         skipped = 0
@@ -169,6 +176,7 @@ class ScannerState:
                 skipped,
                 self.stats_filter,
             )
+        return new_events
 
     async def trigger(self) -> None:
         """Start a scan unless one is already running.
@@ -195,7 +203,10 @@ class ScannerState:
             result_dict = scan_result_to_dict(result)
             self.last_result = result_dict
             self.last_finished_at = time.time()
-            self._record_history(result_dict)
+            new_events = self._record_history(result_dict)
+            if new_events and self.telegram.enabled and self.telegram.ready:
+                # Fire-and-forget so a slow Telegram doesn't block scanning.
+                asyncio.create_task(self._notify_telegram(new_events))
             logger.info(
                 "Scan complete: %d pairs, %d arbitrage rows in %.1fs (history: %d)",
                 result.total_pairs,
@@ -229,6 +240,24 @@ class ScannerState:
     def start_background(self) -> None:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self.background_loop())
+
+    async def _notify_telegram(self, events: List[Dict[str, Any]]) -> None:
+        try:
+            summary = await self.telegram.notify_events(events)
+            if summary.get("sent"):
+                logger.info(
+                    "telegram: sent %d msg(s) with %d new event(s), %d dedup",
+                    summary.get("sent"),
+                    summary.get("new_events", 0),
+                    summary.get("duplicates", 0),
+                )
+            elif summary.get("duplicates"):
+                logger.info(
+                    "telegram: nothing new (all %d events already sent)",
+                    summary.get("duplicates"),
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("telegram notify failed")
 
     async def stop_background(self) -> None:
         if self._task is not None:
@@ -333,6 +362,7 @@ async def get_state() -> JSONResponse:
         "history_file": str(state.history_store.path) if state.history_store.enabled else None,
         "history_file_size": state.history_store.size_bytes(),
         "stats_filter": state.stats_filter,
+        "telegram": state.telegram.public_state(),
         "result": state.last_result,
     }
     return JSONResponse(payload)
@@ -431,8 +461,40 @@ async def clear_stats() -> Dict[str, Any]:
     state.history.clear()
     if state.history_store.enabled:
         state.history_store.clear()
+    # Reset the dedup memory too — the user is starting fresh, so it's
+    # expected that previously-sent events can fire again.
+    state.telegram.reset_dedup()
     logger.info("History cleared by user")
     return {"cleared": True}
+
+
+class TelegramSettingsPayload(BaseModel):
+    enabled: Optional[bool] = None
+    bot_token: Optional[str] = None
+    chat_id: Optional[str] = None
+
+
+@app.post("/api/telegram/settings")
+async def update_telegram_settings(payload: Optional[TelegramSettingsPayload] = None) -> Dict[str, Any]:
+    body = payload.model_dump(exclude_unset=True) if payload else {}
+    state.telegram.update_config(
+        enabled=body.get("enabled"),
+        bot_token=body.get("bot_token"),
+        chat_id=body.get("chat_id"),
+    )
+    return {"status": "ok", "telegram": state.telegram.public_state()}
+
+
+@app.post("/api/telegram/test")
+async def telegram_test() -> Dict[str, Any]:
+    result = await state.telegram.send_test()
+    return {"telegram": state.telegram.public_state(), **result}
+
+
+@app.post("/api/telegram/reset_dedup")
+async def telegram_reset_dedup() -> Dict[str, Any]:
+    state.telegram.reset_dedup()
+    return {"status": "ok", "telegram": state.telegram.public_state()}
 
 
 @app.get("/api/history/download")

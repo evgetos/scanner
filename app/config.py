@@ -89,3 +89,18 @@ class AppConfig:
             "SCANNER_HISTORY_FILE", str(_default_history_file())
         )
     )
+
+    # --- Telegram notifications ---
+    # Bot token from @BotFather and chat / channel id that should receive
+    # notifications. If either is empty, notifications are silently disabled.
+    telegram_bot_token: str = field(
+        default_factory=lambda: _env("TELEGRAM_BOT_TOKEN")
+    )
+    telegram_chat_id: str = field(
+        default_factory=lambda: _env("TELEGRAM_CHAT_ID")
+    )
+    # Master switch (runtime-mutable). When False, no messages are sent
+    # even if the credentials are present.
+    telegram_enabled: bool = field(
+        default_factory=lambda: _env("TELEGRAM_ENABLED", "1") not in ("0", "false", "False")
+    )

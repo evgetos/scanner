@@ -69,6 +69,45 @@
           </div>
         </section>
 
+        <section class="card telegram-card collapsible" data-collapse-key="telegram">
+          <header>
+            <button type="button" class="collapse-toggle" aria-expanded="true">
+              <span class="collapse-arrow">▾</span>
+              <h2>Telegram</h2>
+            </button>
+            <span id="telegram-status-badge" class="badge">—</span>
+          </header>
+          <div class="collapsible-body">
+            <div class="controls">
+              <label class="checkbox">
+                <input type="checkbox" id="telegram-enabled" />
+                Уведомления включены
+              </label>
+              <label>
+                <span>Bot token <em title="@BotFather → токен вида 12345:ABC-…">(@BotFather)</em></span>
+                <input type="text" id="telegram-bot-token" placeholder="12345:ABC-… или оставьте пустым, чтобы использовать .env" autocomplete="off" />
+              </label>
+              <label>
+                <span>Chat ID <em title="id чата, группы или канала (может быть отрицательным)">(личный или -100…)</em></span>
+                <input type="text" id="telegram-chat-id" placeholder="напр. 123456789 или -1001234567890" autocomplete="off" />
+              </label>
+              <div class="actions">
+                <button type="button" id="btn-telegram-test" class="btn-secondary" title="Отправить пробное сообщение">✉ Тестовое сообщение</button>
+                <button type="button" id="btn-telegram-reset" class="btn-secondary" title="Сбросить память дедупликации (все следующие события будут считаться новыми)">↻ Сбросить дедуп</button>
+                <span id="telegram-hint" class="hint"></span>
+              </div>
+            </div>
+            <p class="footer-note">
+              Бот присылает одно сообщение после каждого скана, в котором перечислены
+              ТОЛЬКО <strong>новые</strong> ситуации (которых не было в предыдущем сообщении),
+              прошедшие все фильтры статистики.
+              Ключ дедупликации: <code>ПАРА | БИРЖА_КУПИТЬ → БИРЖА_ПРОДАТЬ</code>.
+              Токен и chat id берутся из <code>.env</code> (<code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>),
+              но можно переопределить здесь. Пустые поля означают «бери из .env».
+            </p>
+          </div>
+        </section>
+
         <section class="card summary-card collapsible" data-collapse-key="summary">
           <header>
             <button type="button" class="collapse-toggle" aria-expanded="true">

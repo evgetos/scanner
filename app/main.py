@@ -65,10 +65,15 @@ class ScannerState:
         self.history: Deque[Dict[str, Any]] = deque(maxlen=APP_CONFIG.history_limit)
         self.history_store = HistoryStore(APP_CONFIG.history_file or None)
         # Telegram notifier — disabled gracefully when no token / chat id.
+        # ``fallback_proxy_provider`` lets the bot piggy-back on the scanner's
+        # current proxy (env or runtime-override) when no Telegram-specific
+        # proxy is configured. Critical in regions where Telegram is blocked.
         self.telegram = TelegramNotifier(
             bot_token=APP_CONFIG.telegram_bot_token,
             chat_id=APP_CONFIG.telegram_chat_id,
             enabled=APP_CONFIG.telegram_enabled,
+            proxy=APP_CONFIG.telegram_proxy,
+            fallback_proxy_provider=self._current_scanner_proxy,
         )
         # The user-controlled stats filter is the gatekeeper for the
         # persistent history: only events that pass these thresholds get
@@ -95,6 +100,18 @@ class ScannerState:
         # Runtime-mutable refresh interval (seconds). Initialized from the
         # env-driven default but can be changed at runtime via /api/scan.
         self.refresh_interval: float = float(APP_CONFIG.refresh_interval)
+
+    def _current_scanner_proxy(self) -> Optional[str]:
+        """Return the proxy the scanner is currently configured to use.
+
+        Runtime overrides (via /api/settings) take precedence over the
+        env-driven default.
+        """
+        if isinstance(self._overrides, dict) and "proxy" in self._overrides:
+            v = self._overrides.get("proxy")
+            return v or None
+        cfg = ScannerConfig()
+        return cfg.proxy or None
 
     def set_stats_filter(self, filt: Dict[str, Any]) -> None:
         """Update the persistence filter. Unknown / None values are ignored."""
@@ -472,6 +489,7 @@ class TelegramSettingsPayload(BaseModel):
     enabled: Optional[bool] = None
     bot_token: Optional[str] = None
     chat_id: Optional[str] = None
+    proxy: Optional[str] = None
 
 
 @app.post("/api/telegram/settings")
@@ -481,6 +499,7 @@ async def update_telegram_settings(payload: Optional[TelegramSettingsPayload] = 
         enabled=body.get("enabled"),
         bot_token=body.get("bot_token"),
         chat_id=body.get("chat_id"),
+        proxy=body.get("proxy"),
     )
     return {"status": "ok", "telegram": state.telegram.public_state()}
 

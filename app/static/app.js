@@ -109,6 +109,7 @@
     tgEnabled: document.getElementById("telegram-enabled"),
     tgBotToken: document.getElementById("telegram-bot-token"),
     tgChatId: document.getElementById("telegram-chat-id"),
+    tgProxy: document.getElementById("telegram-proxy"),
     tgTest: document.getElementById("btn-telegram-test"),
     tgResetDedup: document.getElementById("btn-telegram-reset"),
     tgHint: document.getElementById("telegram-hint"),
@@ -136,7 +137,7 @@
       total_sent: 0,
       total_skipped_dup: 0,
     },
-    tgInputsDirty: { token: false, chatId: false },
+    tgInputsDirty: { token: false, chatId: false, proxy: false },
   };
 
   function fmtPrice(value) {
@@ -527,6 +528,18 @@
     if (elements.tgChatId && !state.tgInputsDirty.chatId && document.activeElement !== elements.tgChatId) {
       elements.tgChatId.value = tg.chat_id || "";
     }
+    if (elements.tgProxy && !state.tgInputsDirty.proxy && document.activeElement !== elements.tgProxy) {
+      // ``proxy_configured`` is the user-set Telegram-specific proxy (masked).
+      // If empty, we show a placeholder describing the effective fallback.
+      elements.tgProxy.value = tg.proxy_configured || "";
+      if (!tg.proxy_configured) {
+        if (tg.proxy_source === "scanner" && tg.proxy) {
+          elements.tgProxy.placeholder = "берётся из SCANNER_PROXY: " + tg.proxy;
+        } else {
+          elements.tgProxy.placeholder = "socks5://user:pass@host:1080 или http://host:8080";
+        }
+      }
+    }
     // The bot token is never echoed back — the server only confirms whether
     // it has one (``has_token``). Show that as a placeholder cue.
     if (elements.tgBotToken && !state.tgInputsDirty.token && document.activeElement !== elements.tgBotToken) {
@@ -554,6 +567,14 @@
     }
     if (elements.tgHint && !elements.tgHint.dataset.transient) {
       const parts = [];
+      if (tg.proxy) {
+        const src = tg.proxy_source === "telegram"
+          ? "TELEGRAM_PROXY"
+          : (tg.proxy_source === "scanner" ? "SCANNER_PROXY" : tg.proxy_source);
+        parts.push("прокси " + tg.proxy + " (" + src + ")");
+      } else {
+        parts.push("без прокси");
+      }
       if (tg.last_sent_at) {
         const dt = new Date(tg.last_sent_at * 1000).toLocaleTimeString();
         parts.push("последняя отправка " + dt);
@@ -593,6 +614,10 @@
     if (state.tgInputsDirty.chatId) {
       body.chat_id = elements.tgChatId.value;
       state.tgInputsDirty.chatId = false;
+    }
+    if (state.tgInputsDirty.proxy) {
+      body.proxy = elements.tgProxy.value;
+      state.tgInputsDirty.proxy = false;
     }
     if (typeof body.enabled !== "boolean" && elements.tgEnabled) {
       // Only include the toggle when the user is actually toggling it.
@@ -1001,6 +1026,14 @@
       });
       elements.tgChatId.addEventListener("change", () => {
         if (state.tgInputsDirty.chatId) pushTelegramSettings({});
+      });
+    }
+    if (elements.tgProxy) {
+      elements.tgProxy.addEventListener("input", () => {
+        state.tgInputsDirty.proxy = true;
+      });
+      elements.tgProxy.addEventListener("change", () => {
+        if (state.tgInputsDirty.proxy) pushTelegramSettings({});
       });
     }
     if (elements.tgTest) elements.tgTest.addEventListener("click", sendTelegramTest);

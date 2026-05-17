@@ -91,6 +91,10 @@
                 <span>Chat ID <em title="id чата, группы или канала (может быть отрицательным)">(личный или -100…)</em></span>
                 <input type="text" id="telegram-chat-id" placeholder="напр. 123456789 или -1001234567890" autocomplete="off" />
               </label>
+              <label>
+                <span>Прокси <em title="Если пусто — используется тот же прокси, что и для сканера (SCANNER_PROXY).">(опционально)</em></span>
+                <input type="text" id="telegram-proxy" placeholder="socks5://user:pass@host:1080 или http://host:8080" autocomplete="off" />
+              </label>
               <div class="actions">
                 <button type="button" id="btn-telegram-test" class="btn-secondary" title="Отправить пробное сообщение">✉ Тестовое сообщение</button>
                 <button type="button" id="btn-telegram-reset" class="btn-secondary" title="Сбросить память дедупликации (все следующие события будут считаться новыми)">↻ Сбросить дедуп</button>
@@ -102,8 +106,11 @@
               ТОЛЬКО <strong>новые</strong> ситуации (которых не было в предыдущем сообщении),
               прошедшие все фильтры статистики.
               Ключ дедупликации: <code>ПАРА | БИРЖА_КУПИТЬ → БИРЖА_ПРОДАТЬ</code>.
-              Токен и chat id берутся из <code>.env</code> (<code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>),
+              Токен, chat id и прокси берутся из <code>.env</code>
+              (<code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_CHAT_ID</code>, <code>TELEGRAM_PROXY</code>),
               но можно переопределить здесь. Пустые поля означают «бери из .env».
+              Если Telegram заблокирован в твоём регионе, заполни прокси
+              (или оставь пустым и используй <code>SCANNER_PROXY</code> — он применяется автоматически).
             </p>
           </div>
         </section>

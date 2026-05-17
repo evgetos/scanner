@@ -104,8 +104,3 @@ class AppConfig:
     telegram_enabled: bool = field(
         default_factory=lambda: _env("TELEGRAM_ENABLED", "1") not in ("0", "false", "False")
     )
-    # Telegram-specific proxy override. When empty, the scanner's current
-    # proxy (SCANNER_PROXY / runtime override) is used so the user only has
-    # to configure proxies once. Useful when Telegram is blocked in the
-    # user's region.
-    telegram_proxy: str = field(default_factory=lambda: _env("TELEGRAM_PROXY"))

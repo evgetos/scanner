@@ -12,14 +12,9 @@ import logging
 import time
 from collections import OrderedDict
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
-
-try:  # pragma: no cover - optional dep
-    from aiohttp_socks import ProxyConnector
-except ImportError:  # pragma: no cover
-    ProxyConnector = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -72,22 +67,6 @@ def _dedup_key(event: Dict[str, Any]) -> str:
     return f"{pair}|{buy}->{sell}"
 
 
-def _mask_proxy(url: Optional[str]) -> Optional[str]:
-    """Strip credentials from a proxy URL so it's safe to surface in /api/state."""
-    if not url:
-        return None
-    if "@" not in url or "://" not in url:
-        return url
-    scheme, rest = url.split("://", 1)
-    if "@" not in rest:
-        return url
-    creds, host = rest.rsplit("@", 1)
-    if ":" in creds:
-        user, _ = creds.split(":", 1)
-        return f"{scheme}://{user}:***@{host}"
-    return f"{scheme}://***@{host}"
-
-
 class TelegramNotifier:
     """Async Telegram notifier with per-scan deduplication.
 
@@ -101,18 +80,11 @@ class TelegramNotifier:
         bot_token: Optional[str] = None,
         chat_id: Optional[str] = None,
         enabled: bool = True,
-        proxy: Optional[str] = None,
-        fallback_proxy_provider: Optional[Callable[[], Optional[str]]] = None,
         dedup_capacity: int = 5000,
     ) -> None:
         self._bot_token: str = (bot_token or "").strip()
         self._chat_id: str = (chat_id or "").strip()
         self._enabled: bool = bool(enabled)
-        # Telegram-specific proxy override; if empty, we ask
-        # ``fallback_proxy_provider`` at send-time (typically the scanner's
-        # current proxy, so the user only has to configure it once).
-        self._proxy: str = (proxy or "").strip()
-        self._fallback_proxy_provider = fallback_proxy_provider
         # OrderedDict so we get FIFO eviction once we hit ``dedup_capacity``.
         self._seen: "OrderedDict[str, float]" = OrderedDict()
         self._dedup_capacity: int = max(100, int(dedup_capacity))
@@ -141,30 +113,13 @@ class TelegramNotifier:
     def has_token(self) -> bool:
         return bool(self._bot_token)
 
-    def _effective_proxy(self) -> Tuple[Optional[str], str]:
-        """Return (proxy_url, source) where source is 'telegram'/'scanner'/'none'."""
-        if self._proxy:
-            return self._proxy, "telegram"
-        if self._fallback_proxy_provider is not None:
-            try:
-                fp = self._fallback_proxy_provider()
-            except Exception:  # noqa: BLE001
-                fp = None
-            if fp:
-                return fp, "scanner"
-        return None, "none"
-
     def public_state(self) -> Dict[str, Any]:
         """JSON-serializable snapshot used by GET /api/state."""
-        proxy, source = self._effective_proxy()
         return {
             "enabled": self._enabled,
             "ready": self.ready,
             "has_token": self.has_token,
             "chat_id": self._chat_id,
-            "proxy": _mask_proxy(proxy),
-            "proxy_source": source,
-            "proxy_configured": _mask_proxy(self._proxy) if self._proxy else "",
             "last_error": self.last_error,
             "last_sent_at": self.last_sent_at,
             "last_sent_count": self.last_sent_count,
@@ -180,7 +135,6 @@ class TelegramNotifier:
         enabled: Optional[bool] = None,
         bot_token: Optional[str] = None,
         chat_id: Optional[str] = None,
-        proxy: Optional[str] = None,
     ) -> None:
         if enabled is not None:
             self._enabled = bool(enabled)
@@ -188,8 +142,6 @@ class TelegramNotifier:
             self._bot_token = bot_token.strip()
         if chat_id is not None:
             self._chat_id = chat_id.strip()
-        if proxy is not None:
-            self._proxy = proxy.strip()
 
     def reset_dedup(self) -> None:
         self._seen.clear()
@@ -259,28 +211,6 @@ class TelegramNotifier:
         messages.append(current)
         return messages
 
-    def _build_session(self, proxy: Optional[str]) -> Tuple[aiohttp.ClientSession, Optional[str]]:
-        """Return (session, http_proxy_for_request).
-
-        For SOCKS proxies we route via :class:`ProxyConnector`; for HTTP(S)
-        proxies we pass ``proxy=`` per request because aiohttp's connector
-        doesn't handle proxy auth headers the same way.
-        """
-        timeout = aiohttp.ClientTimeout(total=20)
-        if not proxy:
-            return aiohttp.ClientSession(timeout=timeout), None
-        scheme = proxy.split("://", 1)[0].lower() if "://" in proxy else ""
-        if scheme in ("socks5", "socks4", "socks5h", "socks4a"):
-            if ProxyConnector is None:
-                raise RuntimeError(
-                    "SOCKS proxies require the aiohttp-socks package "
-                    "(pip install aiohttp-socks)."
-                )
-            connector = ProxyConnector.from_url(proxy)
-            return aiohttp.ClientSession(timeout=timeout, connector=connector), None
-        # http / https
-        return aiohttp.ClientSession(timeout=timeout), proxy
-
     async def _send_raw(self, text: str) -> None:
         """Low-level send; raises on transport / API errors."""
         if not self.ready:
@@ -292,16 +222,13 @@ class TelegramNotifier:
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
         }
-        proxy, _ = self._effective_proxy()
-        session, http_proxy = self._build_session(proxy)
-        try:
-            kwargs: Dict[str, Any] = {}
-            if http_proxy:
-                kwargs["proxy"] = http_proxy
-            async with session.post(url, json=payload, **kwargs) as resp:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload) as resp:
                 body = await resp.text()
                 if resp.status != 200:
                     raise RuntimeError(f"Telegram HTTP {resp.status}: {body[:200]}")
+                # Telegram still wraps errors in 200; check ok=False.
                 try:
                     import json
                     data = json.loads(body)
@@ -310,8 +237,6 @@ class TelegramNotifier:
                 if isinstance(data, dict) and data.get("ok") is False:
                     desc = data.get("description") or body[:200]
                     raise RuntimeError(f"Telegram API error: {desc}")
-        finally:
-            await session.close()
 
     async def send_test(self, message: Optional[str] = None) -> Dict[str, Any]:
         """Force-send a probe message; bypasses ``enabled`` and dedup."""

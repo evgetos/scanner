@@ -3,292 +3,266 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
-from app.exchanges import (
-    EXCHANGE_DISPLAY_NAMES,
-    EXCHANGE_FEATURES,
-    ExchangeManager,
-)
-from app.models import DensityResult, ScanSettings, ScanStatus
+from app.exchanges import ExchangeManager, OrderBook, TickerInfo
+from app.models import DensityCard, DensityItem, ScanSettings, ScanStatus
 
 logger = logging.getLogger(__name__)
 
 
 def _analyse_orderbook(
-    orderbook: dict[str, Any],
+    orderbook: OrderBook,
     current_price: float,
     min_density_usd: float,
     max_distance_pct: float,
 ) -> list[dict[str, Any]]:
-    """Find large density levels in an order book."""
     densities: list[dict[str, Any]] = []
 
-    for side_name, key in [("bid", "bids"), ("ask", "asks")]:
-        orders: list[list[float]] = orderbook.get(key, [])
+    for side_name, orders in [("bid", orderbook.bids), ("ask", orderbook.asks)]:
         if not orders:
             continue
-
         volumes = [p * a for p, a in orders if p > 0 and a > 0]
         avg_volume = sum(volumes) / len(volumes) if volumes else 0
 
         for price, amount in orders:
             if price <= 0 or amount <= 0:
                 continue
-
             volume_usd = price * amount
             distance_pct = abs(price - current_price) / current_price * 100
-
-            if distance_pct > max_distance_pct:
+            if distance_pct > max_distance_pct or volume_usd < min_density_usd:
                 continue
-
-            if volume_usd < min_density_usd:
-                continue
-
             volume_ratio = volume_usd / avg_volume if avg_volume > 0 else 0
-
-            densities.append(
-                {
-                    "side": side_name,
-                    "price": price,
-                    "volume_usd": volume_usd,
-                    "amount": amount,
-                    "distance_pct": round(distance_pct, 4),
-                    "volume_ratio": round(volume_ratio, 2),
-                }
-            )
-
+            densities.append({
+                "side": side_name,
+                "price": price,
+                "volume_usd": volume_usd,
+                "amount": amount,
+                "distance_pct": round(distance_pct, 4),
+                "volume_ratio": round(volume_ratio, 2),
+            })
     return densities
 
 
-class DensityScanner:
-    """Scans order books across exchanges for large density clusters."""
+def _price_key(price: float) -> str:
+    if price >= 1000:
+        return f"{price:.1f}"
+    if price >= 1:
+        return f"{price:.3f}"
+    if price >= 0.01:
+        return f"{price:.5f}"
+    return f"{price:.8f}"
 
+
+class DensityScanner:
     def __init__(self) -> None:
         self.exchange_manager = ExchangeManager()
         self.status = ScanStatus()
-        self.results: list[DensityResult] = []
+        self.cards: list[DensityCard] = []
+        self.settings = ScanSettings()
         self._scan_lock = asyncio.Lock()
+        self._density_times: dict[str, float] = {}
+        self._auto_scan_task: asyncio.Task | None = None  # type: ignore[type-arg]
 
-    async def scan(self, settings: ScanSettings) -> list[DensityResult]:
-        """Run a full scan across all enabled exchanges."""
+    def start_auto_scan(self) -> None:
+        if self._auto_scan_task and not self._auto_scan_task.done():
+            return
+        self.settings.auto_scan = True
+        self.status.auto_scan = True
+        self._auto_scan_task = asyncio.create_task(self._auto_scan_loop())
+
+    def stop_auto_scan(self) -> None:
+        self.settings.auto_scan = False
+        self.status.auto_scan = False
+        if self._auto_scan_task:
+            self._auto_scan_task.cancel()
+            self._auto_scan_task = None
+
+    async def _auto_scan_loop(self) -> None:
+        while self.settings.auto_scan:
+            try:
+                await self.scan(self.settings)
+            except Exception as e:
+                logger.error("Auto-scan error: %s", e)
+            await asyncio.sleep(self.settings.scan_interval)
+
+    async def scan(self, settings: ScanSettings) -> list[DensityCard]:
         if self._scan_lock.locked():
-            return self.results
+            return self.cards
 
         async with self._scan_lock:
+            self.settings = settings
             self.status.scanning = True
             self.status.errors = []
-            all_densities: list[DensityResult] = []
-            exchanges_scanned = 0
-            symbols_scanned = 0
+            all_items: list[DensityItem] = []
+            exchanges_ok = 0
+            symbols_total = 0
 
             tasks = []
             for ex_id in settings.enabled_exchanges:
-                if ex_id not in EXCHANGE_FEATURES:
-                    continue
-                tasks.append(
-                    self._scan_exchange(ex_id, settings)
-                )
+                tasks.append(self._scan_exchange(ex_id, settings))
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
-
             for r in results:
                 if isinstance(r, Exception):
                     self.status.errors.append(str(r))
                     continue
-                densities, n_symbols = r
-                all_densities.extend(densities)
-                exchanges_scanned += 1
-                symbols_scanned += n_symbols
+                items, n_sym = r
+                all_items.extend(items)
+                exchanges_ok += 1
+                symbols_total += n_sym
 
-            favorites_lower = {f.upper() for f in settings.favorites}
-            for d in all_densities:
-                base = d.symbol.split("/")[0] if "/" in d.symbol else d.symbol
-                d.is_favorite = base.upper() in favorites_lower or d.symbol.upper() in favorites_lower
+            now = time.time()
+            new_times: dict[str, float] = {}
+            for item in all_items:
+                key = f"{item.exchange_id}|{item.symbol}|{item.side}|{_price_key(item.price)}"
+                first = self._density_times.get(key, now)
+                new_times[key] = first
+                item.age_seconds = int(now - first)
 
-            all_densities.sort(key=lambda x: x.volume_usd, reverse=True)
+            self._density_times = new_times
 
-            self.results = all_densities
+            favorites_upper = {f.upper() for f in settings.favorites}
+            for item in all_items:
+                base = item.symbol.split("/")[0] if "/" in item.symbol else item.symbol
+                base_clean = base.replace("USDT", "").replace("USD", "").replace("BUSD", "")
+                item.is_favorite = (
+                    base.upper() in favorites_upper
+                    or base_clean.upper() in favorites_upper
+                    or item.symbol.upper() in favorites_upper
+                )
+
+            cards = self._group_into_cards(all_items)
+
+            self.cards = cards
             self.status.scanning = False
             self.status.last_scan_time = datetime.now(timezone.utc).isoformat()
-            self.status.total_densities = len(all_densities)
-            self.status.exchanges_scanned = exchanges_scanned
-            self.status.symbols_scanned = symbols_scanned
+            self.status.total_densities = len(all_items)
+            self.status.exchanges_scanned = exchanges_ok
+            self.status.symbols_scanned = symbols_total
+            return cards
 
-            return all_densities
+    def _group_into_cards(self, items: list[DensityItem]) -> list[DensityCard]:
+        groups: dict[str, list[DensityItem]] = defaultdict(list)
+        for item in items:
+            key = f"{item.symbol}|{item.market_type}"
+            groups[key].append(item)
+
+        cards: list[DensityCard] = []
+        for key, group in groups.items():
+            group.sort(key=lambda x: x.volume_usd, reverse=True)
+            sym, mtype = key.split("|", 1)
+            max_vol = max(d.volume_usd for d in group) if group else 0
+            is_fav = any(d.is_favorite for d in group)
+            cards.append(DensityCard(
+                symbol=sym,
+                market_type=mtype,
+                densities=group,
+                max_volume=max_vol,
+                is_favorite=is_fav,
+            ))
+
+        cards.sort(key=lambda c: c.max_volume, reverse=True)
+        return cards
 
     async def _scan_exchange(
-        self,
-        exchange_id: str,
-        settings: ScanSettings,
-    ) -> tuple[list[DensityResult], int]:
-        """Scan a single exchange for densities."""
+        self, exchange_id: str, settings: ScanSettings
+    ) -> tuple[list[DensityItem], int]:
         exchange = await self.exchange_manager.get_exchange(exchange_id)
         if not exchange:
-            raise RuntimeError(f"Failed to initialize {exchange_id}")
+            raise RuntimeError(f"Unknown exchange: {exchange_id}")
 
-        features = EXCHANGE_FEATURES.get(exchange_id, {})
-        display_name = EXCHANGE_DISPLAY_NAMES.get(exchange_id, exchange_id)
-        all_densities: list[DensityResult] = []
+        all_items: list[DensityItem] = []
         total_symbols = 0
 
         for market_type in settings.market_types:
-            if not features.get(market_type, False):
+            if market_type == "spot" and not exchange.has_spot:
+                continue
+            if market_type == "futures" and not exchange.has_futures:
                 continue
 
-            min_volume = (
+            min_vol = (
                 settings.min_volume_spot
                 if market_type == "spot"
                 else settings.min_volume_futures
             )
 
-            markets = self.exchange_manager.get_markets(exchange_id, market_type)
-            if not markets:
+            try:
+                tickers = await exchange.get_tickers(market_type)
+            except Exception as e:
+                logger.error("Tickers failed %s/%s: %s", exchange_id, market_type, e)
                 continue
 
-            symbols_to_scan = await self._filter_by_volume(
-                exchange_id, markets, min_volume, settings, market_type
-            )
-            total_symbols += len(symbols_to_scan)
-
-            densities = await self._scan_symbols(
-                exchange_id,
-                display_name,
-                market_type,
-                symbols_to_scan,
-                settings,
-            )
-            all_densities.extend(densities)
-
-        return all_densities, total_symbols
-
-    async def _filter_by_volume(
-        self,
-        exchange_id: str,
-        markets: list[dict[str, Any]],
-        min_volume: float,
-        settings: ScanSettings,
-        market_type: str,
-    ) -> list[dict[str, Any]]:
-        """Filter markets by 24h volume."""
-        symbols = [m["symbol"] for m in markets if m.get("active", True)]
-
-        favorites_upper = {f.upper() for f in settings.favorites}
-
-        try:
-            tickers = await self.exchange_manager.fetch_tickers(exchange_id)
-        except Exception as e:
-            logger.error("Ticker fetch failed for %s: %s", exchange_id, e)
-            return []
-
-        filtered: list[dict[str, Any]] = []
-        for m in markets:
-            sym = m["symbol"]
-            if not m.get("active", True):
-                continue
-
-            ticker = tickers.get(sym)
-            if not ticker:
-                continue
-
-            quote_vol = ticker.get("quoteVolume") or 0
-            last_price = ticker.get("last") or ticker.get("close") or 0
-
-            if last_price <= 0:
-                continue
-
-            base = sym.split("/")[0] if "/" in sym else sym
-            is_fav = base.upper() in favorites_upper or sym.upper() in favorites_upper
-
-            if quote_vol >= min_volume or is_fav:
-                filtered.append(
-                    {
-                        "symbol": sym,
-                        "last_price": last_price,
-                        "volume_24h": quote_vol,
-                        "market": m,
-                    }
-                )
-
-        filtered.sort(key=lambda x: x["volume_24h"], reverse=True)
-        return filtered[: settings.max_symbols_per_exchange]
-
-    async def _scan_symbols(
-        self,
-        exchange_id: str,
-        display_name: str,
-        market_type: str,
-        symbols_info: list[dict[str, Any]],
-        settings: ScanSettings,
-    ) -> list[DensityResult]:
-        """Scan order books for a list of symbols on one exchange."""
-        densities: list[DensityResult] = []
-
-        batch_size = 5
-        for i in range(0, len(symbols_info), batch_size):
-            batch = symbols_info[i : i + batch_size]
-            tasks = [
-                self._scan_single_symbol(
-                    exchange_id, display_name, market_type, info, settings
-                )
-                for info in batch
+            usdt_tickers = [
+                t for t in tickers
+                if "USDT" in t.display_symbol.upper() and t.last_price > 0
             ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for r in results:
-                if isinstance(r, Exception):
-                    continue
-                densities.extend(r)
 
-            if i + batch_size < len(symbols_info):
-                await asyncio.sleep(0.2)
+            favorites_upper = {f.upper() for f in settings.favorites}
+            filtered = [
+                t for t in usdt_tickers
+                if t.volume_24h_quote >= min_vol
+                or any(
+                    f in t.display_symbol.upper()
+                    for f in favorites_upper
+                )
+            ]
+            filtered.sort(key=lambda t: t.volume_24h_quote, reverse=True)
+            filtered = filtered[: settings.max_symbols_per_exchange]
+            total_symbols += len(filtered)
 
-        return densities
+            batch_size = 5
+            for i in range(0, len(filtered), batch_size):
+                batch = filtered[i: i + batch_size]
+                tasks = [
+                    self._scan_symbol(exchange, market_type, t, settings)
+                    for t in batch
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for r in results:
+                    if isinstance(r, Exception):
+                        continue
+                    all_items.extend(r)
+                if i + batch_size < len(filtered):
+                    await asyncio.sleep(0.15)
 
-    async def _scan_single_symbol(
+        return all_items, total_symbols
+
+    async def _scan_symbol(
         self,
-        exchange_id: str,
-        display_name: str,
+        exchange: Any,
         market_type: str,
-        info: dict[str, Any],
+        ticker: TickerInfo,
         settings: ScanSettings,
-    ) -> list[DensityResult]:
-        """Scan a single symbol's order book for densities."""
-        symbol = info["symbol"]
-        current_price = info["last_price"]
-        volume_24h = info["volume_24h"]
-
-        orderbook = await self.exchange_manager.fetch_order_book(
-            exchange_id, symbol, limit=50
-        )
+    ) -> list[DensityItem]:
+        orderbook = await exchange.get_orderbook(ticker.symbol, market_type, limit=50)
         if not orderbook:
             return []
 
         raw = _analyse_orderbook(
-            orderbook,
-            current_price,
-            settings.min_density_usd,
-            settings.max_distance_pct,
+            orderbook, ticker.last_price,
+            settings.min_density_usd, settings.max_distance_pct,
         )
 
-        results = []
+        items = []
         for d in raw:
-            results.append(
-                DensityResult(
-                    exchange=display_name,
-                    symbol=symbol,
-                    market_type=market_type,
-                    side=d["side"],
-                    price=d["price"],
-                    volume_usd=round(d["volume_usd"], 2),
-                    amount=d["amount"],
-                    distance_pct=d["distance_pct"],
-                    volume_ratio=d["volume_ratio"],
-                    volume_24h_usd=round(volume_24h, 2),
-                )
-            )
-
-        return results
+            items.append(DensityItem(
+                exchange=exchange.exchange_name,
+                exchange_id=exchange.exchange_id,
+                symbol=ticker.display_symbol,
+                market_type=market_type,
+                side=d["side"],
+                price=d["price"],
+                volume_usd=round(d["volume_usd"], 2),
+                amount=d["amount"],
+                distance_pct=d["distance_pct"],
+                volume_ratio=d["volume_ratio"],
+                volume_24h_usd=round(ticker.volume_24h_quote, 2),
+            ))
+        return items
 
     async def close(self) -> None:
-        await self.exchange_manager.close_all()
+        self.stop_auto_scan()
+        await self.exchange_manager.close()

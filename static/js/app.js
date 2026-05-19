@@ -1,53 +1,36 @@
-/* global state */
-let allResults = [];
-let filteredResults = [];
+let allCards = [];
 let favorites = JSON.parse(localStorage.getItem("favorites") || "[]");
-let sortColumn = "volume_usd";
-let sortDirection = "desc";
+let autoScanActive = false;
+let pollInterval = null;
+let hiddenCards = new Set(JSON.parse(localStorage.getItem("hiddenCards") || "[]"));
 
-/* ---------- init ---------- */
 document.addEventListener("DOMContentLoaded", () => {
     loadSettings();
     loadExchanges();
     renderFavorites();
-    setupSortHandlers();
 });
 
-/* ---------- exchanges ---------- */
 async function loadExchanges() {
     try {
         const resp = await fetch("/api/exchanges");
         const exchanges = await resp.json();
-        const container = document.getElementById("exchanges-list");
-        container.innerHTML = "";
-
+        const el = document.getElementById("exchanges-list");
+        el.innerHTML = "";
         const saved = JSON.parse(localStorage.getItem("enabledExchanges") || "null");
-
-        exchanges.forEach((ex) => {
+        exchanges.forEach(ex => {
             const label = document.createElement("label");
-            label.className = "checkbox-label";
-
+            label.className = "cb";
             const cb = document.createElement("input");
             cb.type = "checkbox";
             cb.dataset.exchange = ex.id;
             cb.checked = saved ? saved.includes(ex.id) : true;
-
-            const features = [];
-            if (ex.spot) features.push("спот");
-            if (ex.futures) features.push("фьюч");
-
             label.appendChild(cb);
-            label.appendChild(
-                document.createTextNode(` ${ex.name} (${features.join(", ")})`)
-            );
-            container.appendChild(label);
+            label.appendChild(document.createTextNode(` ${ex.name}`));
+            el.appendChild(label);
         });
-    } catch (e) {
-        console.error("Failed to load exchanges:", e);
-    }
+    } catch (e) { console.error("loadExchanges:", e); }
 }
 
-/* ---------- settings ---------- */
 function loadSettings() {
     const s = JSON.parse(localStorage.getItem("scanSettings") || "{}");
     if (s.min_volume_spot != null) document.getElementById("min-volume-spot").value = s.min_volume_spot;
@@ -70,249 +53,245 @@ function saveSettings() {
         market_futures: document.getElementById("market-futures").checked,
     };
     localStorage.setItem("scanSettings", JSON.stringify(s));
-
     const enabled = [];
-    document.querySelectorAll("#exchanges-list input[type=checkbox]").forEach((cb) => {
+    document.querySelectorAll("#exchanges-list input[type=checkbox]").forEach(cb => {
         if (cb.checked) enabled.push(cb.dataset.exchange);
     });
     localStorage.setItem("enabledExchanges", JSON.stringify(enabled));
 }
 
 function getSettings() {
-    const marketTypes = [];
-    if (document.getElementById("market-spot").checked) marketTypes.push("spot");
-    if (document.getElementById("market-futures").checked) marketTypes.push("futures");
-
-    const enabledExchanges = [];
-    document.querySelectorAll("#exchanges-list input[type=checkbox]").forEach((cb) => {
-        if (cb.checked) enabledExchanges.push(cb.dataset.exchange);
+    const mt = [];
+    if (document.getElementById("market-spot").checked) mt.push("spot");
+    if (document.getElementById("market-futures").checked) mt.push("futures");
+    const ex = [];
+    document.querySelectorAll("#exchanges-list input[type=checkbox]").forEach(cb => {
+        if (cb.checked) ex.push(cb.dataset.exchange);
     });
-
     return {
         min_volume_spot: +document.getElementById("min-volume-spot").value,
         min_volume_futures: +document.getElementById("min-volume-futures").value,
         max_distance_pct: +document.getElementById("max-distance").value,
         min_density_usd: +document.getElementById("min-density").value,
         max_symbols_per_exchange: +document.getElementById("max-symbols").value,
-        enabled_exchanges: enabledExchanges,
-        market_types: marketTypes,
+        enabled_exchanges: ex,
+        market_types: mt,
         favorites: favorites,
     };
 }
 
-/* ---------- scanning ---------- */
+function toggleSettings() {
+    document.getElementById("settings-panel").classList.toggle("hidden");
+}
+
+/* scan */
 async function startScan() {
     const btn = document.getElementById("btn-scan");
-    const statusText = document.getElementById("status-text");
+    const st = document.getElementById("status-text");
     const overlay = document.getElementById("loading-overlay");
-
     btn.disabled = true;
-    statusText.textContent = "Сканирование...";
-    statusText.className = "status-scanning";
+    st.textContent = "Сканирование...";
+    st.className = "status-scanning";
     overlay.classList.remove("hidden");
-
     saveSettings();
-    const settings = getSettings();
-
     try {
         const resp = await fetch("/api/scan", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(settings),
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(getSettings()),
         });
-
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-        allResults = await resp.json();
-
-        const now = new Date().toLocaleTimeString("ru-RU");
-        document.getElementById("last-update").textContent = `Обновлено: ${now}`;
-        statusText.textContent = "Готово";
-        statusText.className = "status-done";
-
-        filterResults();
+        allCards = await resp.json();
+        st.textContent = "Готово";
+        st.className = "status-done";
+        document.getElementById("last-update").textContent = new Date().toLocaleTimeString("ru-RU");
+        renderCards();
     } catch (e) {
-        console.error("Scan failed:", e);
-        statusText.textContent = "Ошибка";
-        statusText.className = "status-error";
+        console.error("scan:", e);
+        st.textContent = "Ошибка";
+        st.className = "status-error";
     } finally {
         btn.disabled = false;
         overlay.classList.add("hidden");
     }
 }
 
-/* ---------- filtering ---------- */
-function filterResults() {
-    const search = document.getElementById("search-input").value.toUpperCase().trim();
-    const favOnly = document.getElementById("show-favorites-only").checked;
-
-    filteredResults = allResults.filter((r) => {
-        if (search && !r.symbol.toUpperCase().includes(search)) return false;
-        if (favOnly && !r.is_favorite) return false;
-        return true;
-    });
-
-    sortResults();
-    renderResults();
-}
-
-/* ---------- sorting ---------- */
-function setupSortHandlers() {
-    document.querySelectorAll("th.sortable").forEach((th) => {
-        th.addEventListener("click", () => {
-            const col = th.dataset.sort;
-            if (sortColumn === col) {
-                sortDirection = sortDirection === "asc" ? "desc" : "asc";
-            } else {
-                sortColumn = col;
-                sortDirection = "desc";
-            }
-
-            document.querySelectorAll("th.sortable").forEach((t) => {
-                t.classList.remove("active-sort", "asc", "desc");
-            });
-            th.classList.add("active-sort", sortDirection);
-
-            sortResults();
-            renderResults();
-        });
-    });
-}
-
-function sortResults() {
-    filteredResults.sort((a, b) => {
-        let va = a[sortColumn];
-        let vb = b[sortColumn];
-
-        if (typeof va === "string") va = va.toLowerCase();
-        if (typeof vb === "string") vb = vb.toLowerCase();
-        if (typeof va === "boolean") { va = va ? 1 : 0; vb = vb ? 1 : 0; }
-
-        if (va < vb) return sortDirection === "asc" ? -1 : 1;
-        if (va > vb) return sortDirection === "asc" ? 1 : -1;
-        return 0;
-    });
-}
-
-/* ---------- rendering ---------- */
-function renderResults() {
-    const tbody = document.getElementById("results-body");
-    const countEl = document.getElementById("results-count");
-    const infoEl = document.getElementById("scan-info");
-
-    countEl.textContent = `${filteredResults.length} плотностей найдено`;
-
-    const totalAll = allResults.length;
-    if (totalAll !== filteredResults.length) {
-        infoEl.textContent = `(из ${totalAll} всего)`;
+async function toggleAutoScan() {
+    const btn = document.getElementById("btn-auto");
+    if (autoScanActive) {
+        autoScanActive = false;
+        btn.classList.remove("btn-active");
+        btn.textContent = "Авто";
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+        await fetch("/api/auto-scan/stop", {method: "POST"});
     } else {
-        infoEl.textContent = "";
+        saveSettings();
+        autoScanActive = true;
+        btn.classList.add("btn-active");
+        btn.textContent = "Стоп";
+        await fetch("/api/auto-scan/start", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(getSettings()),
+        });
+        pollInterval = setInterval(pollResults, 3000);
     }
+}
 
-    if (filteredResults.length === 0) {
-        tbody.innerHTML = `<tr class="empty-row"><td colspan="11">${
-            allResults.length === 0
-                ? 'Нажмите "Сканировать" для начала'
-                : "Ничего не найдено по фильтрам"
-        }</td></tr>`;
+async function pollResults() {
+    try {
+        const resp = await fetch("/api/results");
+        const data = await resp.json();
+        if (data && data.length > 0) {
+            allCards = data;
+            document.getElementById("last-update").textContent = new Date().toLocaleTimeString("ru-RU");
+            document.getElementById("status-text").textContent = "Авто-скан";
+            document.getElementById("status-text").className = "status-done";
+            renderCards();
+        }
+    } catch (e) { console.error("poll:", e); }
+}
+
+/* render */
+function renderCards() {
+    const container = document.getElementById("cards-container");
+    const empty = document.getElementById("empty-state");
+    const countEl = document.getElementById("density-count");
+
+    const visible = allCards.filter(c => !hiddenCards.has(c.symbol + "|" + c.market_type));
+    const totalDensities = visible.reduce((s, c) => s + c.densities.length, 0);
+    countEl.textContent = `${totalDensities} плотностей`;
+
+    if (visible.length === 0 && allCards.length === 0) {
+        container.innerHTML = "";
+        container.appendChild(empty);
         return;
     }
 
-    const maxVolume = Math.max(...filteredResults.map((r) => r.volume_usd));
-
     const fragment = document.createDocumentFragment();
-    filteredResults.forEach((r) => {
-        const tr = document.createElement("tr");
-        tr.className = `${r.side === "bid" ? "bid-row" : "ask-row"} ${r.is_favorite ? "favorite-row" : ""}`;
 
-        const barWidth = Math.round((r.volume_usd / maxVolume) * 60);
+    visible.forEach(card => {
+        const el = document.createElement("div");
+        el.className = "density-card";
+        if (card.is_favorite) el.classList.add("favorite");
 
-        tr.innerHTML = `
-            <td><span class="fav-star ${r.is_favorite ? "active" : ""}"
-                       onclick="toggleFavorite('${r.symbol}', this)">★</span></td>
-            <td>${r.exchange}</td>
-            <td><strong>${r.symbol}</strong></td>
-            <td><span class="market-badge ${r.market_type}">${r.market_type === "spot" ? "Спот" : "Фьюч"}</span></td>
-            <td>${r.side === "bid" ? "BID" : "ASK"}</td>
-            <td>${formatPrice(r.price)}</td>
-            <td>${formatUsd(r.volume_usd)}<span class="volume-bar" style="width:${barWidth}px"></span></td>
-            <td>${formatNumber(r.amount)}</td>
-            <td>${r.distance_pct.toFixed(2)}%</td>
-            <td>${r.volume_ratio}x</td>
-            <td>${formatUsd(r.volume_24h_usd)}</td>
-        `;
-        fragment.appendChild(tr);
+        const typeLabel = card.market_type === "spot" ? "S" : "F";
+        const typeClass = card.market_type;
+        const isFav = isFavoriteSymbol(card.symbol);
+        const cardKey = card.symbol + "|" + card.market_type;
+        const isHidden = hiddenCards.has(cardKey);
+
+        let headerHtml = `
+            <div class="card-header">
+                <div class="card-title">
+                    <span class="card-symbol">${card.symbol}</span>
+                    <span class="card-type ${typeClass}">${typeLabel}</span>
+                </div>
+                <div class="card-actions">
+                    <button title="Скрыть" onclick="toggleHideCard('${cardKey}')">👁</button>
+                    <button class="${isFav ? 'active' : ''}" title="Избранное" onclick="toggleCardFavorite('${card.symbol}')">☆</button>
+                </div>
+            </div>`;
+
+        let rowsHtml = "";
+        card.densities.forEach(d => {
+            const rowClass = d.side === "bid" ? "bid" : "ask";
+            const arrow = d.side === "bid" ? "▲" : "▼";
+            const ageStr = formatAge(d.age_seconds);
+            rowsHtml += `
+                <div class="density-row ${rowClass}">
+                    <span class="vol-cell">${formatUsd(d.volume_usd)}</span>
+                    <span class="side-icon">${arrow}</span>
+                    <span class="age-cell">
+                        <span class="exchange-tag">${d.exchange_id}</span>
+                        ${ageStr}
+                    </span>
+                    <span class="price-cell">${formatPrice(d.price)}</span>
+                    <span class="dist-cell">${d.distance_pct.toFixed(1)}%</span>
+                </div>`;
+        });
+
+        el.innerHTML = headerHtml + rowsHtml;
+        fragment.appendChild(el);
     });
 
-    tbody.innerHTML = "";
-    tbody.appendChild(fragment);
+    container.innerHTML = "";
+    container.appendChild(fragment);
 }
 
-/* ---------- favorites ---------- */
+/* favorites */
 function addFavorite() {
     const input = document.getElementById("fav-input");
-    const values = input.value
-        .split(",")
-        .map((v) => v.trim().toUpperCase())
-        .filter((v) => v && !favorites.includes(v));
-
-    favorites.push(...values);
+    const vals = input.value.split(",").map(v => v.trim().toUpperCase()).filter(v => v && !favorites.includes(v));
+    favorites.push(...vals);
     localStorage.setItem("favorites", JSON.stringify(favorites));
     input.value = "";
     renderFavorites();
 }
 
-function removeFavorite(symbol) {
-    favorites = favorites.filter((f) => f !== symbol);
+function removeFavorite(sym) {
+    favorites = favorites.filter(f => f !== sym);
     localStorage.setItem("favorites", JSON.stringify(favorites));
     renderFavorites();
 }
 
-function toggleFavorite(symbol, starEl) {
-    const base = symbol.split("/")[0];
+function isFavoriteSymbol(symbol) {
+    const base = symbol.replace(/USDT$/i, "").replace(/USD$/i, "");
+    return favorites.some(f => f === base.toUpperCase() || f === symbol.toUpperCase());
+}
+
+function toggleCardFavorite(symbol) {
+    const base = symbol.replace(/USDT$/i, "").replace(/USD$/i, "").toUpperCase();
     if (favorites.includes(base)) {
-        favorites = favorites.filter((f) => f !== base);
+        favorites = favorites.filter(f => f !== base);
     } else {
         favorites.push(base);
     }
     localStorage.setItem("favorites", JSON.stringify(favorites));
     renderFavorites();
-
-    allResults.forEach((r) => {
-        const b = r.symbol.split("/")[0];
-        r.is_favorite = favorites.includes(b.toUpperCase());
-    });
-    filterResults();
+    renderCards();
 }
 
 function renderFavorites() {
-    const container = document.getElementById("favorites-list");
-    container.innerHTML = "";
-    favorites.forEach((sym) => {
+    const el = document.getElementById("favorites-list");
+    el.innerHTML = "";
+    favorites.forEach(sym => {
         const tag = document.createElement("span");
         tag.className = "tag";
         tag.innerHTML = `${sym} <button onclick="removeFavorite('${sym}')">&times;</button>`;
-        container.appendChild(tag);
+        el.appendChild(tag);
     });
 }
 
-/* ---------- formatters ---------- */
-function formatUsd(value) {
-    if (value >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
-    if (value >= 1e6) return `$${(value / 1e6).toFixed(2)}M`;
-    if (value >= 1e3) return `$${(value / 1e3).toFixed(1)}K`;
-    return `$${value.toFixed(2)}`;
+/* hide cards */
+function toggleHideCard(key) {
+    if (hiddenCards.has(key)) hiddenCards.delete(key);
+    else hiddenCards.add(key);
+    localStorage.setItem("hiddenCards", JSON.stringify([...hiddenCards]));
+    renderCards();
 }
 
-function formatPrice(price) {
-    if (price >= 1000) return price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    if (price >= 1) return price.toFixed(4);
-    if (price >= 0.001) return price.toFixed(6);
-    return price.toFixed(8);
+/* formatters */
+function formatUsd(v) {
+    if (v >= 1e9) return (v / 1e9).toFixed(2) + "B$";
+    if (v >= 1e6) return (v / 1e6).toFixed(2) + "M$";
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + "K$";
+    return v.toFixed(0) + "$";
 }
 
-function formatNumber(num) {
-    if (num >= 1e6) return `${(num / 1e6).toFixed(2)}M`;
-    if (num >= 1e3) return `${(num / 1e3).toFixed(1)}K`;
-    return num.toFixed(2);
+function formatPrice(p) {
+    if (p >= 1000) return p.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (p >= 1) return p.toFixed(4);
+    if (p >= 0.001) return p.toFixed(6);
+    return p.toFixed(8);
+}
+
+function formatAge(seconds) {
+    if (seconds < 60) return seconds + "с";
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    if (m < 60) return m + "м " + s + "с";
+    const h = Math.floor(m / 60);
+    const rm = m % 60;
+    return h + "ч " + rm + "м";
 }

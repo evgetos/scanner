@@ -12,7 +12,7 @@ import sys
 
 def install_dependencies():
     """Install required packages automatically."""
-    required = ["fastapi", "uvicorn", "ccxt", "aiohttp", "pydantic"]
+    required = ["fastapi", "uvicorn", "aiohttp", "pydantic"]
     missing = []
     for pkg in required:
         try:

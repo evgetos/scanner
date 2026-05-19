@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.exchanges import EXCHANGE_DISPLAY_NAMES, EXCHANGE_FEATURES
-from app.models import DensityResult, ExchangeInfo, ScanSettings, ScanStatus
+from app.models import DensityCard, ExchangeInfo, ScanSettings, ScanStatus
 from app.scanner import DensityScanner
 
 logging.basicConfig(
@@ -25,7 +23,7 @@ scanner = DensityScanner()
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     logger.info("Density Scanner starting up")
     yield
-    logger.info("Shutting down, closing exchange connections")
+    logger.info("Shutting down")
     await scanner.close()
 
 
@@ -34,23 +32,26 @@ app = FastAPI(title="Order Book Density Scanner", lifespan=lifespan)
 
 @app.get("/api/exchanges")
 async def get_exchanges() -> list[ExchangeInfo]:
-    result = []
-    for ex_id, name in EXCHANGE_DISPLAY_NAMES.items():
-        features = EXCHANGE_FEATURES.get(ex_id, {})
-        result.append(
-            ExchangeInfo(
-                id=ex_id,
-                name=name,
-                spot=features.get("spot", False),
-                futures=features.get("futures", False),
-            )
-        )
-    return result
+    infos = scanner.exchange_manager.get_all_exchange_info()
+    return [ExchangeInfo(**i) for i in infos]
 
 
 @app.post("/api/scan")
-async def run_scan(settings: ScanSettings) -> list[DensityResult]:
+async def run_scan(settings: ScanSettings) -> list[DensityCard]:
     return await scanner.scan(settings)
+
+
+@app.post("/api/auto-scan/start")
+async def start_auto_scan(settings: ScanSettings) -> ScanStatus:
+    scanner.settings = settings
+    scanner.start_auto_scan()
+    return scanner.status
+
+
+@app.post("/api/auto-scan/stop")
+async def stop_auto_scan() -> ScanStatus:
+    scanner.stop_auto_scan()
+    return scanner.status
 
 
 @app.get("/api/status")
@@ -59,8 +60,8 @@ async def get_status() -> ScanStatus:
 
 
 @app.get("/api/results")
-async def get_results() -> list[DensityResult]:
-    return scanner.results
+async def get_results() -> list[DensityCard]:
+    return scanner.cards
 
 
 @app.get("/")

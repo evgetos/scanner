@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Density Scanner</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>Плотности</h1>
+        </div>
+        <div class="header-center">
+            <button id="btn-scan" class="btn btn-primary" onclick="startScan()">Сканировать</button>
+            <button id="btn-auto" class="btn btn-outline" onclick="toggleAutoScan()">Авто</button>
+            <button class="btn btn-outline" onclick="toggleSettings()">⚙</button>
+        </div>
+        <div class="header-right">
+            <span id="status-text" class="status-idle">Готов</span>
+            <span id="last-update"></span>
+            <span id="density-count"></span>
+        </div>
+    </header>
+
+    <div id="settings-panel" class="settings-panel hidden">
+        <div class="settings-grid">
+            <div class="settings-section">
+                <h4>Объём 24ч (мин. USD)</h4>
+                <div class="form-row">
+                    <label>Спот</label>
+                    <input type="number" id="min-volume-spot" value="100000" min="0" step="10000">
+                </div>
+                <div class="form-row">
+                    <label>Фьючерсы</label>
+                    <input type="number" id="min-volume-futures" value="100000" min="0" step="10000">
+                </div>
+            </div>
+            <div class="settings-section">
+                <h4>Параметры</h4>
+                <div class="form-row">
+                    <label>Дальность (%)</label>
+                    <input type="number" id="max-distance" value="5" min="0.1" max="50" step="0.1">
+                </div>
+                <div class="form-row">
+                    <label>Мин. плотность (USD)</label>
+                    <input type="number" id="min-density" value="50000" min="1000" step="5000">
+                </div>
+                <div class="form-row">
+                    <label>Пар на биржу</label>
+                    <input type="number" id="max-symbols" value="50" min="5" max="200" step="5">
+                </div>
+                <div class="form-row">
+                    <label>Заявок в карточке</label>
+                    <input type="number" id="max-rows" value="10" min="1" max="100" step="1">
+                </div>
+            </div>
+            <div class="settings-section">
+                <h4>Рынки</h4>
+                <label class="cb"><input type="checkbox" id="market-spot" checked> Спот</label>
+                <label class="cb"><input type="checkbox" id="market-futures" checked> Фьючерсы</label>
+            </div>
+            <div class="settings-section">
+                <h4>Биржи</h4>
+                <div id="exchanges-list"></div>
+            </div>
+            <div class="settings-section">
+                <h4>Избранное</h4>
+                <div class="form-row">
+                    <input type="text" id="fav-input" placeholder="BTC, ETH..." onkeydown="if(event.key==='Enter')addFavorite()">
+                    <button class="btn btn-small" onclick="addFavorite()">+</button>
+                </div>
+                <div id="favorites-list" class="tags"></div>
+            </div>
+        </div>
+    </div>
+
+    <main id="cards-container" class="cards-container">
+        <div class="empty-state" id="empty-state">
+            Нажмите «Сканировать» для поиска плотностей
+        </div>
+    </main>
+
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p>Сканирование бирж...</p>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

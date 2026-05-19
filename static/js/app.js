@@ -10,6 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderFavorites();
     document.getElementById("max-distance").addEventListener("input", () => { if (allCards.length) renderCards(); });
     document.getElementById("min-density").addEventListener("input", () => { if (allCards.length) renderCards(); });
+    document.getElementById("max-rows").addEventListener("input", () => { if (allCards.length) renderCards(); });
 });
 
 async function loadExchanges() {
@@ -40,6 +41,7 @@ function loadSettings() {
     if (s.max_distance_pct != null) document.getElementById("max-distance").value = s.max_distance_pct;
     if (s.min_density_usd != null) document.getElementById("min-density").value = s.min_density_usd;
     if (s.max_symbols != null) document.getElementById("max-symbols").value = s.max_symbols;
+    if (s.max_rows != null) document.getElementById("max-rows").value = s.max_rows;
     if (s.market_spot != null) document.getElementById("market-spot").checked = s.market_spot;
     if (s.market_futures != null) document.getElementById("market-futures").checked = s.market_futures;
 }
@@ -51,6 +53,7 @@ function saveSettings() {
         max_distance_pct: +document.getElementById("max-distance").value,
         min_density_usd: +document.getElementById("min-density").value,
         max_symbols: +document.getElementById("max-symbols").value,
+        max_rows: +document.getElementById("max-rows").value,
         market_spot: document.getElementById("market-spot").checked,
         market_futures: document.getElementById("market-futures").checked,
     };
@@ -175,9 +178,13 @@ function renderCards() {
         );
         if (filtered.length === 0) return;
 
-        const asks = filtered.filter(d => d.side === "ask").sort((a, b) => b.volume_usd - a.volume_usd);
-        const bids = filtered.filter(d => d.side === "bid").sort((a, b) => b.volume_usd - a.volume_usd);
-        const ordered = [...asks, ...bids];
+        const maxRows = +document.getElementById("max-rows").value || 10;
+        const asks = filtered.filter(d => d.side === "ask").sort((a, b) => a.distance_pct - b.distance_pct);
+        const bids = filtered.filter(d => d.side === "bid").sort((a, b) => a.distance_pct - b.distance_pct);
+        const halfMax = Math.ceil(maxRows / 2);
+        const trimAsks = asks.slice(0, halfMax);
+        const trimBids = bids.slice(0, maxRows - trimAsks.length);
+        const ordered = [...trimAsks, ...trimBids];
 
         totalDensities += ordered.length;
 

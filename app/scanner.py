@@ -154,11 +154,11 @@ class DensityScanner:
         for key, group in groups.items():
             asks = sorted(
                 [d for d in group if d.side == "ask"],
-                key=lambda x: x.volume_usd, reverse=True,
+                key=lambda x: x.distance_pct,
             )
             bids = sorted(
                 [d for d in group if d.side == "bid"],
-                key=lambda x: x.volume_usd, reverse=True,
+                key=lambda x: x.distance_pct,
             )
             ordered = asks + bids
             sym, mtype = key.split("|", 1)

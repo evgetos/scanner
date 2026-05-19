@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Book Density Scanner</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>📊 Density Scanner</h1>
+            <span class="subtitle">Сканер плотностей стакана</span>
+        </div>
+        <div class="header-right">
+            <span id="status-text" class="status-idle">Готов</span>
+            <span id="last-update"></span>
+            <button id="btn-scan" class="btn btn-primary" onclick="startScan()">
+                🔍 Сканировать
+            </button>
+        </div>
+    </header>
+
+    <div class="container">
+        <aside class="sidebar">
+            <div class="panel">
+                <h3>Объём торгов 24ч</h3>
+                <div class="form-group">
+                    <label>Спот (мин. USD)</label>
+                    <input type="number" id="min-volume-spot" value="100000" min="0" step="10000">
+                </div>
+                <div class="form-group">
+                    <label>Фьючерсы (мин. USD)</label>
+                    <input type="number" id="min-volume-futures" value="100000" min="0" step="10000">
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>Параметры сканирования</h3>
+                <div class="form-group">
+                    <label>Дальность от цены (%)</label>
+                    <input type="number" id="max-distance" value="5" min="0.1" max="50" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label>Мин. объём плотности (USD)</label>
+                    <input type="number" id="min-density" value="50000" min="1000" step="5000">
+                </div>
+                <div class="form-group">
+                    <label>Макс. пар на биржу</label>
+                    <input type="number" id="max-symbols" value="50" min="5" max="200" step="5">
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>Тип рынка</h3>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="market-spot" checked> Спот
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="market-futures" checked> Фьючерсы
+                    </label>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>Биржи</h3>
+                <div id="exchanges-list" class="checkbox-group">
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>⭐ Избранное</h3>
+                <div class="form-group">
+                    <div class="input-row">
+                        <input type="text" id="fav-input" placeholder="BTC, ETH...">
+                        <button class="btn btn-small" onclick="addFavorite()">+</button>
+                    </div>
+                </div>
+                <div id="favorites-list" class="tags-container"></div>
+            </div>
+        </aside>
+
+        <main class="content">
+            <div class="toolbar">
+                <div class="toolbar-left">
+                    <span id="results-count">0 плотностей найдено</span>
+                    <span id="scan-info"></span>
+                </div>
+                <div class="toolbar-right">
+                    <input type="text" id="search-input" placeholder="Поиск по символу..." oninput="filterResults()">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="show-favorites-only" onchange="filterResults()"> Только избранное
+                    </label>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table id="results-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="is_favorite" class="sortable">⭐</th>
+                            <th data-sort="exchange" class="sortable">Биржа</th>
+                            <th data-sort="symbol" class="sortable">Символ</th>
+                            <th data-sort="market_type" class="sortable">Рынок</th>
+                            <th data-sort="side" class="sortable">Тип</th>
+                            <th data-sort="price" class="sortable">Цена</th>
+                            <th data-sort="volume_usd" class="sortable active-sort desc">Объём (USD)</th>
+                            <th data-sort="amount" class="sortable">Кол-во</th>
+                            <th data-sort="distance_pct" class="sortable">Дистанция (%)</th>
+                            <th data-sort="volume_ratio" class="sortable">Кратность</th>
+                            <th data-sort="volume_24h_usd" class="sortable">Объём 24ч</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-body">
+                        <tr class="empty-row">
+                            <td colspan="11">Нажмите "Сканировать" для начала</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="loading-overlay" class="loading-overlay hidden">
+                <div class="spinner"></div>
+                <p>Сканирование бирж...</p>
+                <p class="loading-hint">Это может занять 1-2 минуты</p>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

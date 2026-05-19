@@ -111,15 +111,19 @@ class GateExchange(BaseExchange):
                 "https://api.gateio.ws/api/v4/spot/order_book",
                 {"currency_pair": symbol, "limit": str(limit)},
             )
+            if not data:
+                return None
+            bids = [(float(p), float(a)) for p, a in data.get("bids", [])]
+            asks = [(float(p), float(a)) for p, a in data.get("asks", [])]
         else:
             data = await self._get(
                 "https://api.gateio.ws/api/v4/futures/usdt/order_book",
                 {"contract": symbol, "limit": str(limit)},
             )
-        if not data:
-            return None
-        bids = [(float(p), float(a)) for p, a in data.get("bids", [])]
-        asks = [(float(p), float(a)) for p, a in data.get("asks", [])]
+            if not data:
+                return None
+            bids = [(float(lv["p"]), abs(float(lv["s"]))) for lv in data.get("bids", [])]
+            asks = [(float(lv["p"]), abs(float(lv["s"]))) for lv in data.get("asks", [])]
         return OrderBook(bids=bids, asks=asks)
 
 
@@ -210,8 +214,8 @@ class MexcExchange(BaseExchange):
                 data = data.get("data", {})
         if not data:
             return None
-        bids = [(float(p), float(a)) for p, a in data.get("bids", [])]
-        asks = [(float(p), float(a)) for p, a in data.get("asks", [])]
+        bids = [(float(lv[0]), float(lv[1])) for lv in data.get("bids", []) if len(lv) >= 2]
+        asks = [(float(lv[0]), float(lv[1])) for lv in data.get("asks", []) if len(lv) >= 2]
         return OrderBook(bids=bids, asks=asks)
 
 
@@ -292,7 +296,9 @@ class KucoinExchange(BaseExchange):
                     last = float(t.get("lastTradePrice", 0) or t.get("markPrice", 0))
                     vol = float(t.get("turnoverOf24h", 0))
                     if last > 0:
-                        display = sym.replace("-", "").replace("M", "")
+                        display = sym.replace("-", "")
+                        if display.endswith("M"):
+                            display = display[:-1]
                         tickers.append(TickerInfo(sym, display, last, vol))
                 except (ValueError, KeyError):
                     continue

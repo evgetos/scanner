@@ -8,6 +8,8 @@ document.addEventListener("DOMContentLoaded", () => {
     loadSettings();
     loadExchanges();
     renderFavorites();
+    document.getElementById("max-distance").addEventListener("input", () => { if (allCards.length) renderCards(); });
+    document.getElementById("min-density").addEventListener("input", () => { if (allCards.length) renderCards(); });
 });
 
 async function loadExchanges() {
@@ -158,28 +160,33 @@ function renderCards() {
     const empty = document.getElementById("empty-state");
     const countEl = document.getElementById("density-count");
 
-    const visible = allCards.filter(c => !hiddenCards.has(c.symbol + "|" + c.market_type));
-    const totalDensities = visible.reduce((s, c) => s + c.densities.length, 0);
-    countEl.textContent = `${totalDensities} плотностей`;
+    const maxDist = +document.getElementById("max-distance").value;
+    const minDensity = +document.getElementById("min-density").value;
 
-    if (visible.length === 0 && allCards.length === 0) {
-        container.innerHTML = "";
-        container.appendChild(empty);
-        return;
-    }
-
+    let totalDensities = 0;
     const fragment = document.createDocumentFragment();
 
-    visible.forEach(card => {
+    allCards.forEach(card => {
+        const cardKey = card.symbol + "|" + card.market_type;
+        if (hiddenCards.has(cardKey)) return;
+
+        const filtered = card.densities.filter(d =>
+            d.distance_pct <= maxDist && d.volume_usd >= minDensity
+        );
+        if (filtered.length === 0) return;
+
+        const asks = filtered.filter(d => d.side === "ask").sort((a, b) => b.volume_usd - a.volume_usd);
+        const bids = filtered.filter(d => d.side === "bid").sort((a, b) => b.volume_usd - a.volume_usd);
+        const ordered = [...asks, ...bids];
+
+        totalDensities += ordered.length;
+
         const el = document.createElement("div");
         el.className = "density-card";
-        if (card.is_favorite) el.classList.add("favorite");
 
         const typeLabel = card.market_type === "spot" ? "S" : "F";
         const typeClass = card.market_type;
         const isFav = isFavoriteSymbol(card.symbol);
-        const cardKey = card.symbol + "|" + card.market_type;
-        const isHidden = hiddenCards.has(cardKey);
 
         let headerHtml = `
             <div class="card-header">
@@ -194,7 +201,7 @@ function renderCards() {
             </div>`;
 
         let rowsHtml = "";
-        card.densities.forEach(d => {
+        ordered.forEach(d => {
             const rowClass = d.side === "bid" ? "bid" : "ask";
             const arrow = d.side === "bid" ? "▲" : "▼";
             const ageStr = formatAge(d.age_seconds);
@@ -215,8 +222,20 @@ function renderCards() {
         fragment.appendChild(el);
     });
 
+    countEl.textContent = `${totalDensities} плотностей`;
+
+    if (totalDensities === 0 && allCards.length === 0) {
+        container.innerHTML = "";
+        container.appendChild(empty);
+        return;
+    }
+
     container.innerHTML = "";
-    container.appendChild(fragment);
+    if (totalDensities === 0) {
+        container.innerHTML = '<div class="empty-state">Нет плотностей по текущим фильтрам</div>';
+    } else {
+        container.appendChild(fragment);
+    }
 }
 
 /* favorites */

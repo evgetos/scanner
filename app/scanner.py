@@ -152,14 +152,22 @@ class DensityScanner:
 
         cards: list[DensityCard] = []
         for key, group in groups.items():
-            group.sort(key=lambda x: x.volume_usd, reverse=True)
+            asks = sorted(
+                [d for d in group if d.side == "ask"],
+                key=lambda x: x.volume_usd, reverse=True,
+            )
+            bids = sorted(
+                [d for d in group if d.side == "bid"],
+                key=lambda x: x.volume_usd, reverse=True,
+            )
+            ordered = asks + bids
             sym, mtype = key.split("|", 1)
-            max_vol = max(d.volume_usd for d in group) if group else 0
-            is_fav = any(d.is_favorite for d in group)
+            max_vol = max(d.volume_usd for d in ordered) if ordered else 0
+            is_fav = any(d.is_favorite for d in ordered)
             cards.append(DensityCard(
                 symbol=sym,
                 market_type=mtype,
-                densities=group,
+                densities=ordered,
                 max_volume=max_vol,
                 is_favorite=is_fav,
             ))
@@ -197,7 +205,7 @@ class DensityScanner:
 
             usdt_tickers = [
                 t for t in tickers
-                if "USDT" in t.display_symbol.upper() and t.last_price > 0
+                if t.display_symbol.upper().endswith("USDT") and t.last_price > 0
             ]
 
             favorites_upper = {f.upper() for f in settings.favorites}

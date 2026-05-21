@@ -24,6 +24,7 @@ def default_settings() -> ScannerSettings:
         proxy_url=None,
         sound_enabled=False,
         sound_threshold_pct=1.0,
+        close_threshold_pct=0.5,
     )
 
 

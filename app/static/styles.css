@@ -29,10 +29,38 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
   padding: 18px 28px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, #181c25 0%, #14171f 100%);
+  flex-wrap: wrap;
 }
+
+.tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tab:hover { color: var(--text); background: var(--panel-2); }
+.tab.active {
+  background: var(--panel-2);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.view { display: none; }
+.view.active { display: grid; }
 
 .title h1 {
   margin: 0;
@@ -107,6 +135,48 @@ main {
 
 @media (max-width: 1024px) {
   main { grid-template-columns: 1fr; }
+}
+
+#history-view {
+  grid-template-columns: 320px 1fr;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.pagination button {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.pagination button:hover { background: var(--border); }
+.pagination button:disabled { opacity: 0.4; }
+
+#history-page { color: var(--muted); font-size: 12px; }
+
+select {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%238a93a6' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+input[type="datetime-local"] {
+  color-scheme: dark;
 }
 
 .panel {
@@ -350,6 +420,7 @@ tbody tr.alert-new {
 
 .badge.up { background: rgba(45, 213, 123, 0.15); color: var(--green); }
 .badge.down { background: rgba(255, 93, 108, 0.15); color: var(--red); }
+.badge.open { background: rgba(255, 178, 64, 0.18); color: var(--amber); }
 
 .ex-tag {
   display: inline-block;

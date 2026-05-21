@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from pathlib import Path
+from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .exchanges import EXCHANGE_LABELS, EXCHANGES
-from .models import ScanResult, ScannerSettings
+from .history import HistoryStore
+from .models import HistoryPage, ScanResult, ScannerSettings, Situation
 from .scanner import Scanner
 from .settings import SettingsStore
 
@@ -20,9 +24,11 @@ logging.basicConfig(
 logger = logging.getLogger("scanner")
 
 STATIC_DIR = Path(__file__).parent / "static"
+HISTORY_PATH = Path(os.environ.get("SCANNER_HISTORY", "data/history.db"))
 
 settings_store = SettingsStore()
-scanner = Scanner(settings_store)
+history_store = HistoryStore(HISTORY_PATH)
+scanner = Scanner(settings_store, history_store)
 
 
 @asynccontextmanager
@@ -65,6 +71,35 @@ def get_scan() -> ScanResult:
 @app.post("/api/scan/run", response_model=ScanResult)
 async def run_scan() -> ScanResult:
     return await scanner.scan_once()
+
+
+@app.get("/api/history", response_model=HistoryPage)
+def get_history(
+    exchange: Optional[str] = None,
+    symbol: Optional[str] = None,
+    status: Optional[str] = Query(None, pattern="^(open|closed)$"),
+    from_ts: Optional[float] = None,
+    to_ts: Optional[float] = None,
+    min_abs_spread: Optional[float] = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> HistoryPage:
+    rows, total = history_store.query(
+        exchange=exchange,
+        symbol=symbol,
+        status=status,
+        from_ts=from_ts,
+        to_ts=to_ts,
+        min_abs_spread=min_abs_spread,
+        limit=limit,
+        offset=offset,
+    )
+    items = []
+    for r in rows:
+        d = asdict(r)
+        d["duration_sec"] = (r.closed_at - r.opened_at) if r.closed_at else None
+        items.append(Situation(**d))
+    return HistoryPage(items=items, total=total, limit=limit, offset=offset)
 
 
 @app.get("/")

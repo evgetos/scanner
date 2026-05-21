@@ -12,13 +12,17 @@
       <h1>Сканер Fair vs Last</h1>
       <span class="subtitle">Binance · MEXC · Gate · Bybit · OKX · Bitget · KuCoin</span>
     </div>
+    <nav class="tabs">
+      <button type="button" class="tab active" data-tab="scanner">Сканер</button>
+      <button type="button" class="tab" data-tab="history">История</button>
+    </nav>
     <div class="header-actions">
       <span id="last-scan" class="last-scan">—</span>
       <button id="run-now" type="button">Сканировать сейчас</button>
     </div>
   </header>
 
-  <main>
+  <main id="scanner-view" class="view active">
     <section class="panel settings-panel">
       <h2>Параметры сканирования</h2>
       <form id="settings-form">
@@ -33,8 +37,14 @@
         </label>
 
         <label>
-          Мин. спред, %
+          Мин. спред (открытие), %
           <input type="number" name="min_spread_pct" min="0" step="0.1" required />
+        </label>
+
+        <label>
+          Порог схождения (закрытие), %
+          <input type="number" name="close_threshold_pct" min="0" step="0.05" required />
+          <small>Когда |спред| ≤ этого значения, ситуация закрывается. Должен быть меньше порога открытия.</small>
         </label>
 
         <label>
@@ -98,6 +108,90 @@
             <tr class="empty"><td colspan="6">Нет данных. Запускается первое сканирование…</td></tr>
           </tbody>
         </table>
+      </div>
+    </section>
+  </main>
+
+  <main id="history-view" class="view">
+    <section class="panel filters-panel">
+      <h2>Фильтр истории</h2>
+      <form id="history-form">
+        <label>
+          Биржа
+          <select name="exchange">
+            <option value="">Все</option>
+          </select>
+        </label>
+        <label>
+          Символ
+          <input type="text" name="symbol" placeholder="например, BTC" autocomplete="off" />
+        </label>
+        <label>
+          Статус
+          <select name="status">
+            <option value="">Все</option>
+            <option value="open">Открытые</option>
+            <option value="closed">Закрытые</option>
+          </select>
+        </label>
+        <label>
+          От (UTC)
+          <input type="datetime-local" name="from" />
+        </label>
+        <label>
+          До (UTC)
+          <input type="datetime-local" name="to" />
+        </label>
+        <label>
+          Мин. пиковый |спред|, %
+          <input type="number" name="min_abs_spread" min="0" step="0.1" />
+        </label>
+        <label>
+          Размер страницы
+          <select name="limit">
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+          </select>
+        </label>
+        <div class="form-actions">
+          <button type="submit">Применить</button>
+          <button type="button" id="history-reset" class="ghost">Сбросить</button>
+          <span id="history-status" class="status-text"></span>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel history-panel">
+      <div class="results-header">
+        <h2>История ситуаций</h2>
+        <span id="history-count" class="result-count">0</span>
+      </div>
+      <div class="table-wrap">
+        <table id="history-table">
+          <thead>
+            <tr>
+              <th>Открыта (UTC)</th>
+              <th>Закрыта (UTC)</th>
+              <th class="num">Длительность</th>
+              <th>Биржа</th>
+              <th>Символ</th>
+              <th class="num">Спред откр.</th>
+              <th class="num">Пик |спред|</th>
+              <th class="num">Спред закр.</th>
+              <th class="num">Объём 24ч</th>
+            </tr>
+          </thead>
+          <tbody id="history-body">
+            <tr class="empty"><td colspan="9">Данных нет. Запустите сканер и подождите появления событий.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button type="button" id="history-prev">← Назад</button>
+        <span id="history-page">—</span>
+        <button type="button" id="history-next">Вперёд →</button>
       </div>
     </section>
   </main>

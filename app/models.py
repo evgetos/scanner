@@ -17,6 +17,7 @@ class ScannerSettings(BaseModel):
     proxy_url: Optional[str] = None
     sound_enabled: bool = False
     sound_threshold_pct: float = 1.0
+    close_threshold_pct: float = 0.5
 
     @field_validator("proxy_url", mode="before")
     @classmethod
@@ -45,6 +46,11 @@ class ScannerSettings(BaseModel):
     def _sound_threshold_non_neg(cls, v: float) -> float:
         return max(0.0, float(v))
 
+    @field_validator("close_threshold_pct")
+    @classmethod
+    def _close_threshold_non_neg(cls, v: float) -> float:
+        return max(0.0, float(v))
+
 
 class TickerAnomaly(BaseModel):
     exchange: str
@@ -68,3 +74,28 @@ class ScanResult(BaseModel):
     last_scan_at: Optional[float] = None
     anomalies: List[TickerAnomaly] = Field(default_factory=list)
     exchange_status: List[ExchangeStatus] = Field(default_factory=list)
+
+
+class Situation(BaseModel):
+    id: int
+    exchange: str
+    symbol: str
+    opened_at: float
+    closed_at: Optional[float] = None
+    duration_sec: Optional[float] = None
+    open_spread_pct: float
+    max_abs_spread_pct: float
+    max_spread_pct: float
+    close_spread_pct: Optional[float] = None
+    open_last_price: float
+    open_fair_price: float
+    close_last_price: Optional[float] = None
+    close_fair_price: Optional[float] = None
+    open_volume_usdt: float
+
+
+class HistoryPage(BaseModel):
+    items: List[Situation]
+    total: int
+    limit: int
+    offset: int

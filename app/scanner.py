@@ -7,17 +7,88 @@ from typing import Dict, List, Optional, Tuple
 
 from .exchanges import EXCHANGES
 from .exchanges.base import Ticker
+from .history import HistoryStore
 from .models import ExchangeStatus, ScanResult, ScannerSettings, TickerAnomaly
 from .settings import SettingsStore
 
 logger = logging.getLogger(__name__)
 
 
+class SituationRecorder:
+    """In-memory state machine that converts a stream of (exchange, symbol, spread)
+    observations into open/closed situation rows persisted in HistoryStore.
+
+    Hysteresis:
+      * Open when |spread| >= open_threshold AND volume >= min_volume_usdt.
+      * Close when (already open) AND |spread| <= close_threshold (volume ignored).
+      * While open, update max_abs_spread only if the new |spread| exceeds the
+        in-memory cached peak (avoids redundant SQLite writes).
+    """
+
+    def __init__(self, history: HistoryStore):
+        self.history = history
+        # key -> {"id": int, "max_abs": float}
+        self._open: Dict[str, Dict[str, float]] = {}
+        # Bootstrap from DB so restarts continue tracking existing open situations.
+        for row in history.list_open():
+            self._open[f"{row.exchange}:{row.symbol}"] = {
+                "id": float(row.id),
+                "max_abs": row.max_abs_spread_pct,
+            }
+
+    def observe(
+        self,
+        *,
+        exchange: str,
+        symbol: str,
+        last_price: float,
+        fair_price: float,
+        spread_pct: float,
+        volume_usdt: float,
+        ts: float,
+        open_threshold: float,
+        close_threshold: float,
+        min_volume_usdt: float,
+    ) -> None:
+        key = f"{exchange}:{symbol}"
+        existing = self._open.get(key)
+        abs_spread = abs(spread_pct)
+
+        if existing is None:
+            if abs_spread >= open_threshold and volume_usdt >= min_volume_usdt:
+                sid = self.history.open_situation(
+                    exchange=exchange,
+                    symbol=symbol,
+                    opened_at=ts,
+                    spread_pct=spread_pct,
+                    last_price=last_price,
+                    fair_price=fair_price,
+                    volume_usdt=volume_usdt,
+                )
+                self._open[key] = {"id": float(sid), "max_abs": abs_spread}
+            return
+
+        if abs_spread <= close_threshold:
+            self.history.close_situation(
+                int(existing["id"]),
+                closed_at=ts,
+                spread_pct=spread_pct,
+                last_price=last_price,
+                fair_price=fair_price,
+            )
+            del self._open[key]
+        elif abs_spread > existing["max_abs"]:
+            self.history.update_max(int(existing["id"]), spread_pct)
+            existing["max_abs"] = abs_spread
+
+
 class Scanner:
     """Background scanner that periodically compares last vs fair price."""
 
-    def __init__(self, settings_store: SettingsStore):
+    def __init__(self, settings_store: SettingsStore, history: HistoryStore):
         self.settings_store = settings_store
+        self.history = history
+        self.recorder = SituationRecorder(history)
         self._last_result = ScanResult(
             last_scan_at=None,
             anomalies=[],
@@ -109,6 +180,13 @@ class Scanner:
 
         anomalies: List[TickerAnomaly] = []
         now = time.time()
+        # If close_threshold >= min_spread_pct the user has configured the
+        # bands to overlap — keep close_threshold below min_spread_pct so
+        # situations don't flap open/closed inside the same tick.
+        close_threshold = min(
+            settings.close_threshold_pct,
+            max(0.0, settings.min_spread_pct - 1e-9),
+        )
 
         for name, tickers, err in gathered:
             status = statuses[name]
@@ -119,9 +197,31 @@ class Scanner:
             for t in tickers:
                 if t.fair_price <= 0:
                     continue
+                spread = (t.last_price - t.fair_price) / t.fair_price * 100.0
+
+                # Feed the recorder for every observed ticker so it can
+                # detect open / convergence regardless of the anomaly
+                # filter applied to the UI's live table.
+                try:
+                    self.recorder.observe(
+                        exchange=name,
+                        symbol=t.symbol,
+                        last_price=t.last_price,
+                        fair_price=t.fair_price,
+                        spread_pct=spread,
+                        volume_usdt=t.volume_24h_usdt,
+                        ts=now,
+                        open_threshold=settings.min_spread_pct,
+                        close_threshold=close_threshold,
+                        min_volume_usdt=settings.min_volume_usdt,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Recorder failed for %s %s", name, t.symbol
+                    )
+
                 if t.volume_24h_usdt < settings.min_volume_usdt:
                     continue
-                spread = (t.last_price - t.fair_price) / t.fair_price * 100.0
                 if abs(spread) < settings.min_spread_pct:
                     continue
                 anomalies.append(

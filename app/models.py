@@ -13,8 +13,10 @@ class ScannerSettings(BaseModel):
     exchanges: Dict[str, ExchangeSettings] = Field(default_factory=dict)
     min_volume_usdt: float = 1_000_000.0
     min_spread_pct: float = 0.5
-    scan_interval_sec: int = 30
+    scan_interval_sec: int = 1
     proxy_url: Optional[str] = None
+    sound_enabled: bool = False
+    sound_threshold_pct: float = 1.0
 
     @field_validator("proxy_url", mode="before")
     @classmethod
@@ -36,7 +38,12 @@ class ScannerSettings(BaseModel):
     @field_validator("scan_interval_sec")
     @classmethod
     def _interval_min(cls, v: int) -> int:
-        return max(5, int(v))
+        return max(1, int(v))
+
+    @field_validator("sound_threshold_pct")
+    @classmethod
+    def _sound_threshold_non_neg(cls, v: float) -> float:
+        return max(0.0, float(v))
 
 
 class TickerAnomaly(BaseModel):

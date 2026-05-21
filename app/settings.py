@@ -20,8 +20,10 @@ def default_settings() -> ScannerSettings:
         exchanges={name: ExchangeSettings(enabled=True) for name in EXCHANGES},
         min_volume_usdt=1_000_000.0,
         min_spread_pct=0.5,
-        scan_interval_sec=30,
+        scan_interval_sec=1,
         proxy_url=None,
+        sound_enabled=False,
+        sound_threshold_pct=1.0,
     )
 
 

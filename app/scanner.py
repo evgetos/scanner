@@ -71,7 +71,7 @@ class Scanner:
             except Exception:
                 logger.exception("Scan iteration failed unexpectedly")
 
-            interval = max(5, settings.scan_interval_sec)
+            interval = max(1, settings.scan_interval_sec)
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=interval)
             except asyncio.TimeoutError:

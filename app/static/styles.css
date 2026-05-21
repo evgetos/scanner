@@ -74,6 +74,29 @@ button {
 button:hover { background: var(--accent-strong); }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 
+button.ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  padding: 6px 10px;
+  margin-top: 4px;
+  width: fit-content;
+}
+button.ghost:hover { background: var(--panel-2); }
+
+label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
 main {
   display: grid;
   grid-template-columns: 360px 1fr;
@@ -306,6 +329,14 @@ tbody tr.empty td {
   text-align: center;
   color: var(--muted);
   padding: 20px;
+}
+
+@keyframes flash-row {
+  0% { background: rgba(255, 178, 64, 0.35); }
+  100% { background: transparent; }
+}
+tbody tr.alert-new {
+  animation: flash-row 2.5s ease-out;
 }
 
 .badge {

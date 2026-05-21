@@ -6,10 +6,59 @@ const RESULTS_BODY = document.getElementById("results-body");
 const RESULT_COUNT = document.getElementById("result-count");
 const LAST_SCAN_EL = document.getElementById("last-scan");
 const RUN_NOW_BTN = document.getElementById("run-now");
+const TEST_SOUND_BTN = document.getElementById("test-sound");
+
+const POLL_INTERVAL_MS = 1000;
 
 let exchanges = [];
 let exchangeLabels = {};
 let refreshTimer = null;
+
+// Track previously-seen anomaly keys above the current threshold so that
+// the alert only fires on transitions (new anomaly appearing), not on every
+// poll where the same anomaly is still active.
+let prevAlertKeys = null;
+let prevThreshold = null;
+
+// --- Web Audio ---------------------------------------------------------------
+
+const AudioCtor = window.AudioContext || window.webkitAudioContext;
+const audioCtx = AudioCtor ? new AudioCtor() : null;
+let audioUnlocked = false;
+
+function unlockAudio() {
+  if (audioUnlocked || !audioCtx) return;
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume().catch(() => {});
+  }
+  audioUnlocked = true;
+}
+// Browser autoplay policy: audio can only start after a user gesture.
+document.addEventListener("pointerdown", unlockAudio, { once: true });
+document.addEventListener("keydown", unlockAudio, { once: true });
+
+function playAlertSound() {
+  if (!audioCtx || audioCtx.state === "suspended") return;
+  // Short two-tone beep: 880Hz → 1320Hz, ~0.45s total.
+  const now = audioCtx.currentTime;
+  const beep = (freq, start, dur) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, now + start);
+    gain.gain.linearRampToValueAtTime(0.2, now + start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + start + dur);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now + start);
+    osc.stop(now + start + dur + 0.02);
+  };
+  beep(880, 0, 0.18);
+  beep(1320, 0.2, 0.22);
+}
+
+// --- API helpers ------------------------------------------------------------
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -57,6 +106,8 @@ function fmtTimeAgo(ts) {
   return `${h} ч назад`;
 }
 
+// --- Init -------------------------------------------------------------------
+
 async function loadExchanges() {
   const data = await api("/api/exchanges");
   exchanges = data.map((e) => e.id);
@@ -75,11 +126,15 @@ async function loadSettings() {
   SETTINGS_FORM.elements["min_spread_pct"].value = s.min_spread_pct;
   SETTINGS_FORM.elements["scan_interval_sec"].value = s.scan_interval_sec;
   SETTINGS_FORM.elements["proxy_url"].value = s.proxy_url || "";
+  SETTINGS_FORM.elements["sound_enabled"].checked = !!s.sound_enabled;
+  SETTINGS_FORM.elements["sound_threshold_pct"].value = s.sound_threshold_pct;
   for (const id of exchanges) {
     const cb = SETTINGS_FORM.elements[`exchange:${id}`];
     if (cb) cb.checked = !!(s.exchanges[id] && s.exchanges[id].enabled);
   }
 }
+
+// --- Form submit ------------------------------------------------------------
 
 SETTINGS_FORM.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -92,8 +147,10 @@ SETTINGS_FORM.addEventListener("submit", async (e) => {
     ),
     min_volume_usdt: parseFloat(SETTINGS_FORM.elements["min_volume_usdt"].value || "0"),
     min_spread_pct: parseFloat(SETTINGS_FORM.elements["min_spread_pct"].value || "0"),
-    scan_interval_sec: parseInt(SETTINGS_FORM.elements["scan_interval_sec"].value || "30", 10),
+    scan_interval_sec: parseInt(SETTINGS_FORM.elements["scan_interval_sec"].value || "1", 10),
     proxy_url: SETTINGS_FORM.elements["proxy_url"].value.trim() || null,
+    sound_enabled: !!SETTINGS_FORM.elements["sound_enabled"].checked,
+    sound_threshold_pct: parseFloat(SETTINGS_FORM.elements["sound_threshold_pct"].value || "1"),
   };
   SETTINGS_STATUS.textContent = "Сохранение…";
   SETTINGS_STATUS.className = "status-text";
@@ -104,7 +161,7 @@ SETTINGS_FORM.addEventListener("submit", async (e) => {
     });
     SETTINGS_STATUS.textContent = "✓ Сохранено, сканирование перезапущено";
     SETTINGS_STATUS.className = "status-text ok";
-    scheduleRefresh(1000);
+    scheduleRefresh(500);
     setTimeout(() => {
       SETTINGS_STATUS.textContent = "";
       SETTINGS_STATUS.className = "status-text";
@@ -129,6 +186,48 @@ RUN_NOW_BTN.addEventListener("click", async () => {
     RUN_NOW_BTN.textContent = "Сканировать сейчас";
   }
 });
+
+TEST_SOUND_BTN.addEventListener("click", () => {
+  unlockAudio();
+  playAlertSound();
+});
+
+// --- Alert logic ------------------------------------------------------------
+
+function checkAlertTransitions(result) {
+  const enabled = !!SETTINGS_FORM.elements["sound_enabled"].checked;
+  if (!enabled) {
+    prevAlertKeys = null;
+    return new Set();
+  }
+  const threshold = parseFloat(SETTINGS_FORM.elements["sound_threshold_pct"].value || "1");
+  const current = new Set();
+  for (const a of result.anomalies) {
+    if (Math.abs(a.spread_pct) >= threshold) {
+      current.add(`${a.exchange}:${a.symbol}`);
+    }
+  }
+  // Reset baseline if threshold changed (avoids spurious "new" set).
+  if (threshold !== prevThreshold) {
+    prevAlertKeys = null;
+  }
+  prevThreshold = threshold;
+
+  const newlyTriggered = new Set();
+  if (prevAlertKeys !== null) {
+    for (const k of current) {
+      if (!prevAlertKeys.has(k)) newlyTriggered.add(k);
+    }
+  }
+  prevAlertKeys = current;
+
+  if (newlyTriggered.size > 0) {
+    playAlertSound();
+  }
+  return newlyTriggered;
+}
+
+// --- Render -----------------------------------------------------------------
 
 function render(result) {
   LAST_SCAN_EL.textContent = result.last_scan_at
@@ -164,6 +263,8 @@ function render(result) {
     STATUS_BOX.appendChild(card);
   }
 
+  const newlyTriggered = checkAlertTransitions(result);
+
   RESULT_COUNT.textContent = `${result.anomalies.length} строк`;
   RESULTS_BODY.innerHTML = "";
   if (result.anomalies.length === 0) {
@@ -176,6 +277,8 @@ function render(result) {
 
   for (const a of result.anomalies) {
     const tr = document.createElement("tr");
+    const key = `${a.exchange}:${a.symbol}`;
+    if (newlyTriggered.has(key)) tr.className = "alert-new";
     const spreadCls = a.spread_pct >= 0 ? "up" : "down";
     tr.innerHTML = `
       <td><span class="ex-tag">${escapeHtml(exchangeLabels[a.exchange] || a.exchange)}</span></td>
@@ -212,7 +315,7 @@ function scheduleRefresh(delay = 0) {
   if (refreshTimer) clearTimeout(refreshTimer);
   refreshTimer = setTimeout(async () => {
     await refresh();
-    scheduleRefresh(5000);
+    scheduleRefresh(POLL_INTERVAL_MS);
   }, delay);
 }
 
@@ -221,7 +324,7 @@ function scheduleRefresh(delay = 0) {
     await loadExchanges();
     await loadSettings();
     await refresh();
-    scheduleRefresh(5000);
+    scheduleRefresh(POLL_INTERVAL_MS);
   } catch (err) {
     console.error("init failed", err);
     SETTINGS_STATUS.textContent = `Не удалось загрузить: ${err.message}`;

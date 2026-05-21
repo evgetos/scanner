@@ -72,11 +72,14 @@ class Scanner:
                 logger.exception("Scan iteration failed unexpectedly")
 
             interval = max(5, settings.scan_interval_sec)
-            self._wake.clear()
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=interval)
             except asyncio.TimeoutError:
                 pass
+            # Clear after waiting so a kick() that fires during _do_scan() is
+            # preserved and consumed by the next wait_for (which returns
+            # immediately), instead of being erased.
+            self._wake.clear()
 
     async def _do_scan(self, settings: ScannerSettings) -> ScanResult:
         statuses: Dict[str, ExchangeStatus] = {

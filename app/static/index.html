@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Сканер расхождения Fair / Last цены</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>Сканер Fair vs Last</h1>
+      <span class="subtitle">MEXC · Gate · Bybit · OKX · Bitget · KuCoin</span>
+    </div>
+    <div class="header-actions">
+      <span id="last-scan" class="last-scan">—</span>
+      <button id="run-now" type="button">Сканировать сейчас</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel settings-panel">
+      <h2>Параметры сканирования</h2>
+      <form id="settings-form">
+        <fieldset>
+          <legend>Биржи</legend>
+          <div id="exchange-checkboxes" class="exchange-list"></div>
+        </fieldset>
+
+        <label>
+          Мин. объём за 24ч, USDT
+          <input type="number" name="min_volume_usdt" min="0" step="100000" required />
+        </label>
+
+        <label>
+          Мин. спред, %
+          <input type="number" name="min_spread_pct" min="0" step="0.1" required />
+        </label>
+
+        <label>
+          Интервал сканирования, сек
+          <input type="number" name="scan_interval_sec" min="5" step="5" required />
+        </label>
+
+        <label>
+          Прокси-URL
+          <input
+            type="text"
+            name="proxy_url"
+            placeholder="http://user:pass@host:port или socks5://host:port"
+            autocomplete="off"
+          />
+          <small>Используется для всех бирж. Поддерживает http/https/socks5.</small>
+        </label>
+
+        <div class="form-actions">
+          <button type="submit">Сохранить</button>
+          <span id="settings-status" class="status-text"></span>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel results-panel">
+      <h2>Статус бирж</h2>
+      <div id="exchange-status" class="exchange-status"></div>
+
+      <div class="results-header">
+        <h2>Аномалии цен</h2>
+        <span id="result-count" class="result-count">0</span>
+      </div>
+      <div class="table-wrap">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th>Биржа</th>
+              <th>Символ</th>
+              <th class="num">Last Price</th>
+              <th class="num">Fair Price</th>
+              <th class="num">Спред %</th>
+              <th class="num">Объём 24ч, USDT</th>
+            </tr>
+          </thead>
+          <tbody id="results-body">
+            <tr class="empty"><td colspan="6">Нет данных. Запускается первое сканирование…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

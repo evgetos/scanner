@@ -32,7 +32,31 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+или просто:
+
+```bash
+python main.py
+```
+
 Открыть в браузере: <http://localhost:8000/>
+
+### Запуск из PyCharm
+
+В корне репозитория лежит `main.py` — это точка входа для IDE. После открытия проекта в PyCharm:
+
+1. **PyCharm → Settings → Project: scanner → Python Interpreter** — указать интерпретатор (можно создать `venv` через PyCharm: «Add Interpreter → Virtualenv Environment»).
+2. **PyCharm → Run → Edit Configurations…** — там уже будет готовая конфигурация **Scanner** (берётся из `.idea/runConfigurations/Scanner.xml`). Если её нет, можно просто открыть `main.py` и нажать зелёную ▶ рядом с `if __name__ == "__main__":`.
+3. Нажать ▶ Run — приложение поднимется на `http://127.0.0.1:8000/`.
+
+Параметры запуска можно переопределить переменными окружения в Run Configuration:
+
+| Переменная | По умолчанию | Что делает |
+| ---------- | ------------ | ---------- |
+| `HOST`      | `127.0.0.1`  | адрес для bind |
+| `PORT`      | `8000`       | порт |
+| `RELOAD`    | `0`          | `1` → hot-reload при изменениях файлов (удобно при разработке) |
+| `LOG_LEVEL` | `info`       | уровень логов uvicorn |
+| `SCANNER_CONFIG` | `data/config.json` | путь к файлу настроек |
 
 ### Через Docker
 
